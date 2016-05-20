@@ -13,3 +13,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 net.acesinc.nifi.processors.mongodb.AddToArrayMongo
+net.acesinc.nifi.processors.mongodb.PutMongoWithDuplicateCheck
+net.acesinc.nifi.processors.json.TransformJSON

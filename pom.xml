@@ -24,19 +24,19 @@
 
     <groupId>net.acesinc.nifi</groupId>
     <version>1.0.0-SNAPSHOT</version>
-    <artifactId>nifi-extra-mongodb-bundle</artifactId>
+    <artifactId>aces-nifi-processors-bundle</artifactId>
     <packaging>pom</packaging>
 
     <modules>
-        <module>nifi-extra-mongodb-processors</module>
-        <module>nifi-extra-mongodb-nar</module>
+        <module>aces-nifi-processors</module>
+        <module>aces-nifi-nar</module>
     </modules>
 
     <dependencyManagement>
         <dependencies>
             <dependency>
                 <groupId>net.acesinc.nifi</groupId>
-                <artifactId>nifi-mongodb-processors</artifactId>
+                <artifactId>aces-nifi-processors</artifactId>
                 <version>1.0.0-SNAPSHOT</version>
             </dependency>
         </dependencies>
