@@ -20,6 +20,8 @@ Here is a list of available processors:
 Clone this repository and then:
 
 ```
+git clone git@github.com:acesinc/aces-nifi-processors-bundle
+cd aces-nifi-processors-bundle
 mvn clean install
 ```
 
