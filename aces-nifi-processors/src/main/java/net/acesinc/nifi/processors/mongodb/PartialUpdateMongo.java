@@ -178,9 +178,21 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
             final Document doc = Document.parse(new String(content, charset));
 
             // now set up the update
-            final String updateKey = context.getProperty(UPDATE_QUERY_KEY).getValue();
+            final String updateKeys = context.getProperty(UPDATE_QUERY_KEY).getValue();
             final String operation = context.getProperty(OPERATION).getValue();
-            final Document query = new Document(updateKey, doc.get(updateKey));
+            Document query = null;
+            if (updateKeys.contains(",")) {
+                query = new Document();
+                String [] keys = updateKeys.split(",");
+                for(String key : keys){
+                    key = key.trim();
+                    logger.info("Adding +1 updateKey [ "+key+ " ] with value [ "+doc.get(key)+" ]");
+                    query.append(key, doc.get(key));
+                }
+            } else {
+                logger.info("Adding one updateKey [ "+updateKeys+ " ] with value [ "+doc.get(updateKeys)+" ]");
+                query = new Document(updateKeys, doc.get(updateKeys));
+            }
 
             final String propertyName = context.getProperty(PROPERTY_NAME).getValue();
             logger.info("Starting processing of Operation [ " + operation + " ] for propertyName [ " + propertyName + " ]");
