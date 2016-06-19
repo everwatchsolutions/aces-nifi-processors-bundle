@@ -56,6 +56,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
     protected static final String OPERATION_ADD_TO_SET = "$addToSet";
     protected static final String OPERATION_SET = "$set";
     protected static final String OPERATION_CURRENT_DATE = "$currentDate";
+    protected static final String OPERATION_INC = "$inc";
 
     protected static final String WRITE_CONCERN_ACKNOWLEDGED = "ACKNOWLEDGED";
     protected static final String WRITE_CONCERN_UNACKNOWLEDGED = "UNACKNOWLEDGED";
@@ -68,7 +69,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
             .name("Operation")
             .description("The MongoDB Operation we should perform")
             .required(true)
-            .allowableValues(OPERATION_ADD_TO_SET, OPERATION_SET, OPERATION_CURRENT_DATE)
+            .allowableValues(OPERATION_ADD_TO_SET, OPERATION_SET, OPERATION_CURRENT_DATE, OPERATION_INC)
             .build();
     protected static final PropertyDescriptor MODE = new PropertyDescriptor.Builder()
             .name("Mode")
@@ -79,10 +80,9 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
             .build();
     protected static final PropertyDescriptor UPDATE_QUERY_KEY = new PropertyDescriptor.Builder()
             .name("Update Query Key")
-            .description("Key name used to build the update query criteria; this property must be present in the FlowFile content")
-            .required(true)
+            .description("Key name used to build the update query criteria; If empty, an empty query matching all documents will be used. You should use an empty query in conjunction with Mode Many.")
+            .required(false)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-            .defaultValue("_id")
             .build();
     protected static final PropertyDescriptor PROPERTY_NAME = new PropertyDescriptor.Builder()
             .name("Name of the Property to update")
@@ -181,7 +181,9 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
             final String updateKeys = context.getProperty(UPDATE_QUERY_KEY).getValue();
             final String operation = context.getProperty(OPERATION).getValue();
             Document query = null;
-            if (updateKeys.contains(",")) {
+            if (updateKeys == null || updateKeys.isEmpty()) {
+                query = new Document();
+            } else if (updateKeys.contains(",")) {
                 query = new Document();
                 String [] keys = updateKeys.split(",");
                 for(String key : keys){
@@ -197,7 +199,9 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
             final String propertyName = context.getProperty(PROPERTY_NAME).getValue();
             logger.info("Starting processing of Operation [ " + operation + " ] for propertyName [ " + propertyName + " ]");
             Document updateDocument = new Document();
-            if (propertyName.contains(",")) {
+            if ("*".equals(propertyName)) {
+                updateDocument.append(operation, doc);
+            } else if (propertyName.contains(",")) {
                 //we have multiple properties to update
                 Document operationValues = new Document();
                 String[] props = propertyName.split(",");
@@ -234,6 +238,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
 
             UpdateResult result = null;
             if (!updateDocument.isEmpty()) {
+                logger.info("Running Mongo Update with query: " + query + " and document: " +  updateDocument);
                 switch (mode) {
                     case MODE_SINGLE:
                         result = collection.updateOne(query, updateDocument);
@@ -247,7 +252,6 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
 
                 session.getProvenanceReporter().send(flowFile, context.getProperty(URI).getValue());
                 if (result != null) {
-                    //XXX Do we need to be checking isModifiedCountAvailable() ?
                     if (result.getModifiedCount() > 0) {
                         //we actually did update something, so well call this plain ol success
                         session.transfer(flowFile, REL_SUCCESS);
@@ -258,6 +262,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
                 }
             } else {
                 //nothing to do
+                logger.warn("Update Document was empty and ther was nothing to do.");
                 session.getProvenanceReporter().send(flowFile, context.getProperty(URI).getValue());
                 session.transfer(flowFile, REL_SUCCESS_UNMODIFIED);
             }
