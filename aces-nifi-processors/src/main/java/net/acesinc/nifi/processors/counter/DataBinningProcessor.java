@@ -16,11 +16,13 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import net.acesinc.data.binner.Binner;
 import net.acesinc.data.binner.DateBinner;
 import net.acesinc.data.binner.DateGranularity;
 import net.acesinc.data.binner.GeoTileBinner;
 import net.acesinc.data.binner.LiteralBinner;
+import net.acesinc.data.binner.MergedBinner;
 import net.acesinc.data.binner.NumericBinner;
 import org.apache.nifi.annotation.behavior.EventDriven;
 import org.apache.nifi.annotation.behavior.InputRequirement;
@@ -134,6 +136,8 @@ public class DataBinningProcessor extends AbstractProcessor {
             if (config != null && !config.isEmpty()) {
                 List<Map<String, Object>> binners = (List<Map<String, Object>>) config.get("binners");
 
+                Map<String, Binner> binnersByName = new HashMap<>();
+                
                 for (Map<String, Object> binnerConfig : binners) {
                     String type = (String) binnerConfig.get("type");
                     String binName = (String) binnerConfig.get("binName");
@@ -143,6 +147,7 @@ public class DataBinningProcessor extends AbstractProcessor {
                     }
                     
                     log.info("Configuring " + type + " [ " + binName + ", " + dataFieldName + " ]");
+                    Binner b = null;
                     switch (type) {
                         case "DateBinner": {
                             String gran = (String) binnerConfig.get("granularity");
@@ -153,13 +158,13 @@ public class DataBinningProcessor extends AbstractProcessor {
                                 log.warn("Date granularity was invalid. Defaulting to MIN");
                                 dGran = DateGranularity.MIN;
                             }
-                            DateBinner b = new DateBinner(binName, dataFieldName, dGran);
+                            b = new DateBinner(binName, dataFieldName, dGran);
                             
                             configuredBinners.add(b);
                             break;
                         }
                         case "LiteralBinner": {
-                            LiteralBinner b = new LiteralBinner(binName, dataFieldName);
+                            b = new LiteralBinner(binName, dataFieldName);
                             configuredBinners.add(b);
                             break;
                         }
@@ -168,7 +173,7 @@ public class DataBinningProcessor extends AbstractProcessor {
                             if (maxLevel == null) {
                                 maxLevel = GeoTileBinner.MAX_LEVEL_DEFAULT;
                             }
-                            NumericBinner b = new NumericBinner(binName, dataFieldName, maxLevel);
+                            b = new NumericBinner(binName, dataFieldName, maxLevel);
                             configuredBinners.add(b);
                             break;
                         }
@@ -181,7 +186,7 @@ public class DataBinningProcessor extends AbstractProcessor {
                             String lonFieldName = (String) binnerConfig.get("lonFieldName");
                             
                             
-                            GeoTileBinner b = null;
+                            b = null;
                             
                             if (latFieldName != null && !latFieldName.isEmpty() && lonFieldName != null && !lonFieldName.isEmpty()) {
                                 b = new GeoTileBinner(binName, dataFieldName, maxLevel, latFieldName, lonFieldName);
@@ -192,10 +197,31 @@ public class DataBinningProcessor extends AbstractProcessor {
                             configuredBinners.add(b);
                             break;
                         }
+                        case "MergedBinner": {
+                            List<String> binnerNames = (List<String>) binnerConfig.get("binners");
+                            List<Binner> matchedBinners = new ArrayList<>();
+                            for (String name : binnerNames) {
+                                Binner binner = binnersByName.get(name);
+                                if (binner != null) {
+                                    matchedBinners.add(binner);
+                                } else {
+                                    log.warn("No binner with name " + name + " has been created yet. Make sure MergedBinners come after named Binners");
+                                }
+                                
+                            }
+                            b = new MergedBinner(matchedBinners);
+                            
+                            configuredBinners.add(b);
+                            break;
+                        }
                         default: {
                             log.warn("Unknown Binner type [ " + type + " ]. Ignoring...");
                         }
                         
+                    }
+                    
+                    if (b != null) {
+                        binnersByName.put(b.getBinName(), b);
                     }
                 }
             }
@@ -210,7 +236,7 @@ public class DataBinningProcessor extends AbstractProcessor {
         }
 
         final ProcessorLog log = getLogger();
-        final StopWatch stopWatch = new StopWatch(true);
+        final StopWatch watch = new StopWatch(true);
 
         try {
             // Read the contents of the FlowFile into a byte array
@@ -225,7 +251,9 @@ public class DataBinningProcessor extends AbstractProcessor {
             String json = new String(content);
 
             List<Map<String, Object>> binAndCount = new ArrayList<>();
+            StopWatch totalBinners = new StopWatch(true);
             for (Binner b : configuredBinners) {
+                StopWatch binnerWatch = new StopWatch(true);
                 log.debug("Running Binner [ " + b.getBinName() + " ]");
                 List<String> binNames = b.generateBinNames(json);
 
@@ -235,7 +263,11 @@ public class DataBinningProcessor extends AbstractProcessor {
                     map.put("count", 1);
                     binAndCount.add(map);
                 }
+                binnerWatch.stop();
+                log.trace("Binner [ " + b.getBinName() + " ] took " + binnerWatch.getDuration(TimeUnit.MILLISECONDS) + " ms");
             }
+            totalBinners.stop();
+            log.debug("All binners took " + totalBinners.getDuration(TimeUnit.MILLISECONDS) + " ms");
 
             String outputMode = context.getProperty(OUTPUT_MODE).getValue();
             switch (outputMode) {
@@ -280,7 +312,8 @@ public class DataBinningProcessor extends AbstractProcessor {
 //            bin = session.putAttribute(bin, CoreAttributes.MIME_TYPE.key(), "application/json");
 //                    session.transfer(bin, REL_SUCCESS);
 //                    session.getProvenanceReporter().modifyContent(bin, "Binned data field " + b.getDataFieldName() + " with " + b.getClass().getName() + " Binner for Bin Name " + b.getBinName(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
-            log.info("Binned {}", new Object[]{original});
+            watch.stop();
+            log.debug("Binned {} in {} ms", new Object[]{original, watch.getDuration(TimeUnit.MILLISECONDS)});
         } catch (Exception e) {
             log.error("Failed to bin {} due to {}", new Object[]{original, e}, e);
             session.transfer(original, REL_FAILURE);

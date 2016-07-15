@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import org.apache.nifi.annotation.behavior.EventDriven;
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.InputRequirement.Requirement;
@@ -32,6 +33,7 @@ import org.apache.nifi.processor.io.InputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.processors.mongodb.AbstractMongoProcessor;
 import org.apache.nifi.stream.io.StreamUtils;
+import org.apache.nifi.util.StopWatch;
 import org.bson.Document;
 
 /**
@@ -109,6 +111,7 @@ public class PutMongoWithDuplicateCheck extends AbstractMongoProcessor {
 
     @Override
     public void onTrigger(ProcessContext context, ProcessSession session) throws ProcessException {
+        StopWatch totalWatch = new StopWatch(true);
         final FlowFile flowFile = session.get();
         if (flowFile == null) {
             return;
@@ -134,8 +137,10 @@ public class PutMongoWithDuplicateCheck extends AbstractMongoProcessor {
             // parse
             final Document doc = Document.parse(new String(content, charset));
 
+            StopWatch insertWatch = new StopWatch(true);
             collection.insertOne(doc);
-            logger.info("inserted {} into MongoDB", new Object[]{flowFile});
+            insertWatch.stop();
+            logger.info("inserted {} into MongoDB in {} ms", new Object[]{flowFile, insertWatch.getDuration(TimeUnit.MILLISECONDS)});
 
             session.getProvenanceReporter().send(flowFile, context.getProperty(URI).getValue());
             session.transfer(flowFile, REL_SUCCESS);
@@ -145,16 +150,16 @@ public class PutMongoWithDuplicateCheck extends AbstractMongoProcessor {
                     session.getProvenanceReporter().send(flowFile, context.getProperty(URI).getValue());
                     session.transfer(flowFile, REL_ALREADY_EXISTS);
                     context.yield();
-
-                    return;
                 }
+            } else {
+                logger.error("Failed to insert {} into MongoDB due to {}", new Object[]{flowFile, e}, e);
+                //else, some other error that we don't handle. 
+                session.transfer(flowFile, REL_FAILURE);
+                context.yield();
             }
-
-            logger.error("Failed to insert {} into MongoDB due to {}", new Object[]{flowFile, e}, e);
-            //else, some other error that we don't handle. 
-            session.transfer(flowFile, REL_FAILURE);
-            context.yield();
         }
+        totalWatch.stop();
+        logger.info("PutMongo took: " + totalWatch.getDuration(TimeUnit.MILLISECONDS) + "ms");
     }
 
     protected WriteConcern getWriteConcern(final ProcessContext context) {
