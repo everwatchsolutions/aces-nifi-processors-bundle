@@ -5,32 +5,46 @@
  */
 package net.acesinc.nifi.processors.mongodb;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mongodb.WriteConcern;
+import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.client.MongoCollection;
+import com.mongodb.client.model.BulkWriteOptions;
+import com.mongodb.client.model.UpdateOneModel;
+import com.mongodb.client.model.UpdateOptions;
+import com.mongodb.client.model.WriteModel;
 import com.mongodb.client.result.UpdateResult;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import org.apache.nifi.annotation.behavior.EventDriven;
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.logging.ProcessorLog;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
+import org.apache.nifi.processor.exception.FlowFileAccessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.io.InputStreamCallback;
+import org.apache.nifi.processor.io.OutputStreamCallback;
 import org.apache.nifi.processors.mongodb.AbstractMongoProcessor;
 import org.apache.nifi.stream.io.StreamUtils;
+import org.apache.nifi.util.StopWatch;
 import org.bson.Document;
 
 /**
@@ -47,6 +61,8 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
             .description("FlowFiles that resulted in a successful update to some documents in MongoDB are routed to this relationship").build();
     protected static final Relationship REL_SUCCESS_UNMODIFIED = new Relationship.Builder().name("success-unmodified")
             .description("FlowFiles that matched documents but didn't not cause an update to any documents in MongoDB are routed to this relationship").build();
+//    protected static final Relationship REL_ORIGINAL = new Relationship.Builder().name("original")
+//            .description("FlowFiles that are processed are routed to this relationship").build();
     protected static final Relationship REL_FAILURE = new Relationship.Builder().name("failure")
             .description("All FlowFiles that cannot be written to MongoDB are routed to this relationship").build();
 
@@ -108,6 +124,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
 
     private final static Set<Relationship> relationships;
     private final static List<PropertyDescriptor> propertyDescriptors;
+    private ObjectMapper mapper = new ObjectMapper();
 
     static {
         List<PropertyDescriptor> _propertyDescriptors = new ArrayList<>();
@@ -125,6 +142,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
         final Set<Relationship> _relationships = new HashSet<>();
         _relationships.add(REL_SUCCESS);
         _relationships.add(REL_SUCCESS_UNMODIFIED);
+//        _relationships.add(REL_ORIGINAL);
         _relationships.add(REL_FAILURE);
         relationships = Collections.unmodifiableSet(_relationships);
     }
@@ -149,10 +167,6 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
         final ProcessorLog logger = getLogger();
 
         final Charset charset = Charset.forName(context.getProperty(CHARACTER_SET).getValue());
-        final WriteConcern writeConcern = getWriteConcern(context);
-
-        final String mode = context.getProperty(MODE).getValue();
-        final MongoCollection<Document> collection = getCollection(context).withWriteConcern(writeConcern);
 
         try {
             // Read the contents of the FlowFile into a byte array
@@ -175,102 +189,208 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
 //              "_id": "myid",
 //              "myarray": { $each: ["newValue1", "newValue2"]}
 //            }
-            final Document doc = Document.parse(new String(content, charset));
+            String jsonString = new String(content, charset);
+            if (jsonString.startsWith("[")) { //array
+                List<Map<String, Object>> docs = mapper.readValue(jsonString, List.class);
+                List<Map<String, Document>> updateDocs = new ArrayList<>();
+                List<Document> updatedDocs = new ArrayList<>();
+                for (Map<String, Object> map : docs) {
+                    final Document doc = new Document(map);
 
-            // now set up the update
-            final String updateKeys = context.getProperty(UPDATE_QUERY_KEY).getValue();
-            final String operation = context.getProperty(OPERATION).getValue();
-            Document query = null;
-            if (updateKeys == null || updateKeys.isEmpty()) {
-                query = new Document();
-            } else if (updateKeys.contains(",")) {
-                query = new Document();
-                String [] keys = updateKeys.split(",");
-                for(String key : keys){
-                    key = key.trim();
-                    logger.info("Adding +1 updateKey [ "+key+ " ] with value [ "+doc.get(key)+" ]");
-                    query.append(key, doc.get(key));
+                    updateDocs.add(prepareUpdate(flowFile, doc, context, session));
+                    updatedDocs.add(doc);
                 }
-            } else {
-                logger.info("Adding one updateKey [ "+updateKeys+ " ] with value [ "+doc.get(updateKeys)+" ]");
-                query = new Document(updateKeys, doc.get(updateKeys));
-            }
+                
+                BulkWriteResult result = performBlukUpdate(updateDocs, context, session);
+                
+                //clean up after ourselves
+                for (Document doc : updatedDocs) {
+                    FlowFile updated = session.create(flowFile);
+                    final String json = doc.toJson();
 
-            final String propertyName = context.getProperty(PROPERTY_NAME).getValue();
-            logger.info("Starting processing of Operation [ " + operation + " ] for propertyName [ " + propertyName + " ]");
-            Document updateDocument = new Document();
-            if ("*".equals(propertyName)) {
-                updateDocument.append(operation, doc);
-            } else if (propertyName.contains(",")) {
-                //we have multiple properties to update
-                Document operationValues = new Document();
-                String[] props = propertyName.split(",");
-                for (String p : props) {
-                    p = p.trim();
-
-                    if (!OPERATION_CURRENT_DATE.equals(operation)) {
-                        Object origValue = doc.get(p);
-                        logger.info("Adding update for property [ " + p + " ] with value [ " + origValue + " ]");
-                        if (origValue != null) {
-                            operationValues.append(p, doc.get(p));
-                        } else {
-                            //input document didn't have the specified key. skipping. 
+                    updated = session.write(updated, new OutputStreamCallback() {
+                        @Override
+                        public void process(OutputStream out) throws IOException {
+                            out.write(json.getBytes("UTF-8"));
                         }
-                    } else {
-                        operationValues.append(p, true);
-                    }
+                    });
+                    updated = session.putAttribute(updated, CoreAttributes.MIME_TYPE.key(), "application/json");
+
+                    transferFlowFile(updated, result, context, session);
                 }
-                if (!operationValues.isEmpty()) {
-                    updateDocument.append(operation, operationValues);
-                } else {
-                    logger.info("No operations added. Skipping...");
-                }
-            } else {
-                logger.info("Adding update for property [ " + propertyName + " ]");
-                Document operationValue = null;
-                if (!OPERATION_CURRENT_DATE.equals(operation)) {
-                    operationValue = new Document(propertyName, doc.get(propertyName));
-                } else {
-                    operationValue = new Document(propertyName, true);
-                }
-                updateDocument.append(operation, operationValue);
+                
+//                session.transfer(flowFile, REL_ORIGINAL);
+            } else { //document
+                final Document doc = Document.parse(jsonString);
+                UpdateResult result = performUpdate(flowFile, doc, context, session);
+                transferFlowFile(flowFile, result, context, session);
             }
 
-            UpdateResult result = null;
-            if (!updateDocument.isEmpty()) {
-                logger.info("Running Mongo Update with query: " + query + " and document: " +  updateDocument);
-                switch (mode) {
-                    case MODE_SINGLE:
-                        result = collection.updateOne(query, updateDocument);
-                        break;
-                    case MODE_MANY:
-                        result = collection.updateMany(query, updateDocument);
-                        break;
-                }
-
-                logger.info("updated {} into MongoDB", new Object[]{flowFile});
-
-                session.getProvenanceReporter().send(flowFile, context.getProperty(URI).getValue());
-                if (result != null) {
-                    if (result.getModifiedCount() > 0) {
-                        //we actually did update something, so well call this plain ol success
-                        session.transfer(flowFile, REL_SUCCESS);
-                    } else {
-                        //We successfully ran the update, but nothing changed. 
-                        session.transfer(flowFile, REL_SUCCESS_UNMODIFIED);
-                    }
-                }
-            } else {
-                //nothing to do
-                logger.warn("Update Document was empty and ther was nothing to do.");
-                session.getProvenanceReporter().send(flowFile, context.getProperty(URI).getValue());
-                session.transfer(flowFile, REL_SUCCESS_UNMODIFIED);
-            }
-        } catch (Exception e) {
+        } catch (FlowFileAccessException | IOException e) {
             logger.error("Failed to insert {} into MongoDB due to {}", new Object[]{flowFile, e}, e);
             session.transfer(flowFile, REL_FAILURE);
             context.yield();
         }
+    }
+
+    protected void transferFlowFile(FlowFile f, Object result, ProcessContext context, ProcessSession session) {
+        final ProcessorLog logger = getLogger();
+        session.getProvenanceReporter().send(f, context.getProperty(URI).getValue());
+        if (result != null) {
+            long modifiedCount = 0;
+            if (result instanceof UpdateResult) {
+                modifiedCount = ((UpdateResult)result).getModifiedCount();
+            } else if (result instanceof BulkWriteResult) {
+                modifiedCount = ((BulkWriteResult)result).getModifiedCount();
+            }
+            if (modifiedCount > 0) {
+                //we actually did update something, so well call this plain ol success
+                session.transfer(f, REL_SUCCESS);
+            } else {
+                //We successfully ran the update, but nothing changed. 
+                session.transfer(f, REL_SUCCESS_UNMODIFIED);
+            }
+        } else {
+            logger.warn("Update Document was empty and ther was nothing to do.");
+            session.getProvenanceReporter().send(f, context.getProperty(URI).getValue());
+            session.transfer(f, REL_SUCCESS_UNMODIFIED);
+        }
+    }
+
+    protected Map<String, Document> prepareUpdate(FlowFile flowFile, Document doc, ProcessContext context, ProcessSession session) {
+        final ProcessorLog logger = getLogger();
+
+        Map<String, Document> queryAndUpdateDocs = new HashMap<>();
+
+        final String updateKeys = context.getProperty(UPDATE_QUERY_KEY).getValue();
+        final String operation = context.getProperty(OPERATION).getValue();
+        Document query = null;
+        if (updateKeys == null || updateKeys.isEmpty()) {
+            query = new Document();
+        } else if (updateKeys.contains(",")) {
+            query = new Document();
+            String[] keys = updateKeys.split(",");
+            for (String key : keys) {
+                key = key.trim();
+//                logger.info("Adding +1 updateKey [ " + key + " ] with value [ " + doc.get(key) + " ]");
+                query.append(key, doc.get(key));
+            }
+        } else {
+//            logger.info("Adding one updateKey [ " + updateKeys + " ] with value [ " + doc.get(updateKeys) + " ]");
+            query = new Document(updateKeys, doc.get(updateKeys));
+        }
+        queryAndUpdateDocs.put("query", query);
+
+        final String propertyName = context.getProperty(PROPERTY_NAME).getValue();
+//        logger.info("Starting processing of Operation [ " + operation + " ] for propertyName [ " + propertyName + " ]");
+        Document updateDocument = new Document();
+        if ("*".equals(propertyName)) {
+            updateDocument.append(operation, doc);
+        } else if (propertyName.contains(",")) {
+            //we have multiple properties to update
+            Document operationValues = new Document();
+            String[] props = propertyName.split(",");
+            for (String p : props) {
+                p = p.trim();
+
+                if (!OPERATION_CURRENT_DATE.equals(operation)) {
+                    Object origValue = doc.get(p);
+//                    logger.info("Adding update for property [ " + p + " ] with value [ " + origValue + " ]");
+                    if (origValue != null) {
+                        operationValues.append(p, doc.get(p));
+                    } else {
+                        //input document didn't have the specified key. skipping. 
+                        logger.info("Input document did not have value for key [ " + p + " ]. Skipping");
+                    }
+                } else {
+                    operationValues.append(p, true);
+                }
+            }
+            if (!operationValues.isEmpty()) {
+                updateDocument.append(operation, operationValues);
+            } else {
+                logger.info("No operations added. Skipping...");
+            }
+        } else {
+//            logger.info("Adding update for property [ " + propertyName + " ]");
+            Document operationValue = null;
+            if (!OPERATION_CURRENT_DATE.equals(operation)) {
+                operationValue = new Document(propertyName, doc.get(propertyName));
+            } else {
+                operationValue = new Document(propertyName, true);
+            }
+            updateDocument.append(operation, operationValue);
+        }
+        queryAndUpdateDocs.put("update", updateDocument);
+
+        return queryAndUpdateDocs;
+    }
+
+    protected BulkWriteResult performBlukUpdate(List<Map<String, Document>> updateDocs, ProcessContext context, ProcessSession session) {
+        final ProcessorLog logger = getLogger();
+        StopWatch watch = new StopWatch(true);
+
+        logger.info("Performing Bulk Update of [ " + updateDocs.size() + " ] documents");
+        
+        final WriteConcern writeConcern = getWriteConcern(context);
+        final MongoCollection<Document> collection = getCollection(context).withWriteConcern(writeConcern);
+
+        List<WriteModel<Document>> updates = new ArrayList<>();
+        
+        for (Map<String, Document> update : updateDocs) {
+                UpdateOneModel<Document> upOne = new UpdateOneModel<>(
+                        update.get("query"), // find part
+                        update.get("update"), // update part
+                        new UpdateOptions().upsert(true) // options like upsert
+                );
+                updates.add(upOne);
+        }
+
+        BulkWriteResult bulkWriteResult = collection.bulkWrite(updates, new BulkWriteOptions().ordered(false));
+        return bulkWriteResult;
+
+    }
+
+    protected UpdateResult performSingleUpdate(Document query, Document updateDocument, ProcessContext context, ProcessSession session) {
+        final ProcessorLog logger = getLogger();
+        StopWatch watch = new StopWatch(true);
+
+        final String mode = context.getProperty(MODE).getValue();
+
+        final WriteConcern writeConcern = getWriteConcern(context);
+        final MongoCollection<Document> collection = getCollection(context).withWriteConcern(writeConcern);
+
+        UpdateResult result = null;
+        if (!updateDocument.isEmpty()) {
+            watch.start();
+//            logger.info("Running Mongo Update with query: " + query + " and document: " + updateDocument);
+            switch (mode) {
+                case MODE_SINGLE:
+                    result = collection.updateOne(query, updateDocument);
+                    break;
+                case MODE_MANY:
+                    result = collection.updateMany(query, updateDocument);
+                    break;
+            }
+            watch.stop();
+
+            logger.info("Running Mongo Update with query: " + query + " and document: " + updateDocument + " took " + watch.getDuration(TimeUnit.MILLISECONDS) + "ms");
+            return result;
+
+        } else {
+            //nothing to do
+            return null;
+
+        }
+    }
+
+    protected UpdateResult performUpdate(FlowFile flowFile, Document doc, ProcessContext context, ProcessSession session) {
+        Map<String, Document> queryAndUpdate = prepareUpdate(flowFile, doc, context, session);
+
+        Document query = queryAndUpdate.get("query");
+        Document updateDocument = queryAndUpdate.get("update");
+
+        return performSingleUpdate(query, updateDocument, context, session);
     }
 
     protected WriteConcern getWriteConcern(final ProcessContext context) {
