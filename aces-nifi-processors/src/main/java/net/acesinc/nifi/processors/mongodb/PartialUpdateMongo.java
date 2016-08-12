@@ -190,7 +190,11 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
 //              "myarray": { $each: ["newValue1", "newValue2"]}
 //            }
             String jsonString = new String(content, charset);
-            if (jsonString.startsWith("[")) { //array
+            if (jsonString.isEmpty()) {
+                logger.warn("Cannot update with empty document");
+                session.transfer(flowFile, REL_FAILURE);
+                context.yield();
+            } else if (jsonString.startsWith("[")) { //array
                 List<Map<String, Object>> docs = mapper.readValue(jsonString, List.class);
                 List<Map<String, Document>> updateDocs = new ArrayList<>();
                 List<Document> updatedDocs = new ArrayList<>();
@@ -200,9 +204,9 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
                     updateDocs.add(prepareUpdate(flowFile, doc, context, session));
                     updatedDocs.add(doc);
                 }
-                
+
                 BulkWriteResult result = performBlukUpdate(updateDocs, context, session);
-                
+
                 //clean up after ourselves
                 for (Document doc : updatedDocs) {
                     FlowFile updated = session.create(flowFile);
@@ -218,7 +222,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
 
                     transferFlowFile(updated, result, context, session);
                 }
-                
+
 //                session.transfer(flowFile, REL_ORIGINAL);
             } else { //document
                 final Document doc = Document.parse(jsonString);
@@ -239,9 +243,9 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
         if (result != null) {
             long modifiedCount = 0;
             if (result instanceof UpdateResult) {
-                modifiedCount = ((UpdateResult)result).getModifiedCount();
+                modifiedCount = ((UpdateResult) result).getModifiedCount();
             } else if (result instanceof BulkWriteResult) {
-                modifiedCount = ((BulkWriteResult)result).getModifiedCount();
+                modifiedCount = ((BulkWriteResult) result).getModifiedCount();
             }
             if (modifiedCount > 0) {
                 //we actually did update something, so well call this plain ol success
@@ -331,19 +335,19 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
         StopWatch watch = new StopWatch(true);
 
         logger.info("Performing Bulk Update of [ " + updateDocs.size() + " ] documents");
-        
+
         final WriteConcern writeConcern = getWriteConcern(context);
         final MongoCollection<Document> collection = getCollection(context).withWriteConcern(writeConcern);
 
         List<WriteModel<Document>> updates = new ArrayList<>();
-        
+
         for (Map<String, Document> update : updateDocs) {
-                UpdateOneModel<Document> upOne = new UpdateOneModel<>(
-                        update.get("query"), // find part
-                        update.get("update"), // update part
-                        new UpdateOptions().upsert(true) // options like upsert
-                );
-                updates.add(upOne);
+            UpdateOneModel<Document> upOne = new UpdateOneModel<>(
+                    update.get("query"), // find part
+                    update.get("update"), // update part
+                    new UpdateOptions().upsert(true) // options like upsert
+            );
+            updates.add(upOne);
         }
 
         BulkWriteResult bulkWriteResult = collection.bulkWrite(updates, new BulkWriteOptions().ordered(false));
