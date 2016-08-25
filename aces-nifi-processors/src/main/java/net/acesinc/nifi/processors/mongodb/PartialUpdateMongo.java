@@ -61,8 +61,8 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
             .description("FlowFiles that resulted in a successful update to some documents in MongoDB are routed to this relationship").build();
     protected static final Relationship REL_SUCCESS_UNMODIFIED = new Relationship.Builder().name("success-unmodified")
             .description("FlowFiles that matched documents but didn't not cause an update to any documents in MongoDB are routed to this relationship").build();
-//    protected static final Relationship REL_ORIGINAL = new Relationship.Builder().name("original")
-//            .description("FlowFiles that are processed are routed to this relationship").build();
+    protected static final Relationship REL_ORIGINAL = new Relationship.Builder().name("original")
+            .description("FlowFiles that are processed are routed to this relationship").build();
     protected static final Relationship REL_FAILURE = new Relationship.Builder().name("failure")
             .description("All FlowFiles that cannot be written to MongoDB are routed to this relationship").build();
 
@@ -142,7 +142,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
         final Set<Relationship> _relationships = new HashSet<>();
         _relationships.add(REL_SUCCESS);
         _relationships.add(REL_SUCCESS_UNMODIFIED);
-//        _relationships.add(REL_ORIGINAL);
+        _relationships.add(REL_ORIGINAL);
         _relationships.add(REL_FAILURE);
         relationships = Collections.unmodifiableSet(_relationships);
     }
@@ -223,7 +223,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
                     transferFlowFile(updated, result, context, session);
                 }
 
-//                session.transfer(flowFile, REL_ORIGINAL);
+                session.transfer(flowFile, REL_ORIGINAL);
             } else { //document
                 final Document doc = Document.parse(jsonString);
                 UpdateResult result = performUpdate(flowFile, doc, context, session);
