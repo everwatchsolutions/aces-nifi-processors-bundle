@@ -15,6 +15,5 @@
 net.acesinc.nifi.processors.mongodb.PartialUpdateMongo
 net.acesinc.nifi.processors.mongodb.PutMongoWithDuplicateCheck
 net.acesinc.nifi.processors.json.TransformJSON
-net.acesinc.nifi.processors.security.ConvertSecurityMarkingIntoFlowAttributes
 net.acesinc.nifi.processors.security.ConvertSecurityMarkingAndAttrListIntoJson
 net.acesinc.nifi.processors.counter.DataBinningProcessor
