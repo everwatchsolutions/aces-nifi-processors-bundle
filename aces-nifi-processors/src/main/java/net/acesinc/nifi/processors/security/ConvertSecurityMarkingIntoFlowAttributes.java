@@ -151,7 +151,6 @@ public class ConvertSecurityMarkingIntoFlowAttributes extends AbstractProcessor 
         //a) parse for levels and split of prefix part 1 w/ classification part
         //b) build regex based on config
         String regexForClass = getBuiltRegexForClassification(secConfig);
-        System.out.println("raw:=" + rawSecMarkingReceived);
         Matcher m1 = Pattern.compile(regexForClass).matcher(rawSecMarkingReceived);
         if (m1.matches()) {
             logger.debug("Classification part found.");
