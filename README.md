@@ -14,6 +14,7 @@ Here is a list of available processors:
 ### JSON
 
 * TransformJSON - We ported the TransformJSON processor from NiFi 1.0 to 0.6.1. This is a straight copy of this processor into our bundle. 
+* ConvertSecurityMarkingAndAttrListIntoJson - This will take in a raw security marking from a file along with lists of other flow attributes.  The raw security marking will be converted into a Classification JSON object.  The other flow attributes will be included in the JSON conversion.
 
 ## Building
 
