@@ -230,7 +230,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
                 transferFlowFile(flowFile, result, context, session);
             }
 
-        } catch (FlowFileAccessException | IOException e) {
+        } catch (Throwable e) {
             logger.error("Failed to insert {} into MongoDB due to {}", new Object[]{flowFile, e}, e);
             session.transfer(flowFile, REL_FAILURE);
             context.yield();
@@ -424,5 +424,5 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
         }
         return writeConcern;
     }
-
+    
 }
