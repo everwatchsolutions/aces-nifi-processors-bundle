@@ -14,6 +14,7 @@ Here is a list of available processors:
 ### JSON
 
 * TransformJSON - We ported the TransformJSON processor from NiFi 1.0 to 0.6.1. This is a straight copy of this processor into our bundle. 
+* BetterAttributesToJSON - We took some of the original goals that we thought the provided AttributesToJSON should have and added to those by allowing you to more exactly specify whether the attribute in ouputted-JSON format should be a String, Integer, Double, or Date. The current existing AttributesToJSON processor falls well below the needs we have by only outputing things in String form. You simply list the FlowFile expression variables in the corresponding String, Integer, Double, and Date lists and let this processor do the rest.  Dates are expected in Epoch long form down to the millisecond.  A Boolean when listed in the String list will automatically be converted to a Boolean in the output.
 * ConvertSecurityMarkingAndAttrListIntoJson - This will take in a raw security marking from a file along with lists of other flow attributes.  The raw security marking will be converted into a Classification JSON object.  The other flow attributes will be included in the JSON conversion.
 
 ## Building
