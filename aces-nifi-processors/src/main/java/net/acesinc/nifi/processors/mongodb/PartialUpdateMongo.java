@@ -304,7 +304,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
                         operationValues.append(p, doc.get(p));
                     } else {
                         //input document didn't have the specified key. skipping. 
-                        logger.info("Input document did not have value for key [ " + p + " ]. Skipping");
+                        logger.debug("Input document did not have value for key [ " + p + " ]. Skipping");
                     }
                 } else {
                     operationValues.append(p, true);
@@ -313,7 +313,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
             if (!operationValues.isEmpty()) {
                 updateDocument.append(operation, operationValues);
             } else {
-                logger.info("No operations added. Skipping...");
+                logger.debug("No operations added. Skipping...");
             }
         } else {
 //            logger.info("Adding update for property [ " + propertyName + " ]");
@@ -334,7 +334,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
         final ProcessorLog logger = getLogger();
         StopWatch watch = new StopWatch(true);
 
-        logger.info("Performing Bulk Update of [ " + updateDocs.size() + " ] documents");
+        logger.debug("Performing Bulk Update of [ " + updateDocs.size() + " ] documents");
 
         final WriteConcern writeConcern = getWriteConcern(context);
         final MongoCollection<Document> collection = getCollection(context).withWriteConcern(writeConcern);
