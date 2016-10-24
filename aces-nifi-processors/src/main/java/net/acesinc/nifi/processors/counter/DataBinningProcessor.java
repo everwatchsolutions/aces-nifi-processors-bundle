@@ -137,7 +137,7 @@ public class DataBinningProcessor extends AbstractProcessor {
                 List<Map<String, Object>> binners = (List<Map<String, Object>>) config.get("binners");
 
                 Map<String, Binner> binnersByName = new HashMap<>();
-                
+
                 for (Map<String, Object> binnerConfig : binners) {
                     String type = (String) binnerConfig.get("type");
                     String binName = (String) binnerConfig.get("binName");
@@ -145,7 +145,7 @@ public class DataBinningProcessor extends AbstractProcessor {
                     if (dataFieldName == null) {
                         dataFieldName = binName;
                     }
-                    
+
                     log.info("Configuring " + type + " [ " + binName + ", " + dataFieldName + " ]");
                     Binner b = null;
                     switch (type) {
@@ -159,7 +159,7 @@ public class DataBinningProcessor extends AbstractProcessor {
                                 dGran = DateGranularity.MIN;
                             }
                             b = new DateBinner(binName, dataFieldName, dGran);
-                            
+
                             configuredBinners.add(b);
                             break;
                         }
@@ -184,16 +184,15 @@ public class DataBinningProcessor extends AbstractProcessor {
                             }
                             String latFieldName = (String) binnerConfig.get("latFieldName");
                             String lonFieldName = (String) binnerConfig.get("lonFieldName");
-                            
-                            
+
                             b = null;
-                            
+
                             if (latFieldName != null && !latFieldName.isEmpty() && lonFieldName != null && !lonFieldName.isEmpty()) {
                                 b = new GeoTileBinner(binName, dataFieldName, maxLevel, latFieldName, lonFieldName);
                             } else {
                                 b = new GeoTileBinner(binName, dataFieldName, maxLevel);
                             }
-                            
+
                             configuredBinners.add(b);
                             break;
                         }
@@ -207,19 +206,19 @@ public class DataBinningProcessor extends AbstractProcessor {
                                 } else {
                                     log.warn("No binner with name " + name + " has been created yet. Make sure MergedBinners come after named Binners");
                                 }
-                                
+
                             }
                             b = new MergedBinner(matchedBinners);
-                            
+
                             configuredBinners.add(b);
                             break;
                         }
                         default: {
                             log.warn("Unknown Binner type [ " + type + " ]. Ignoring...");
                         }
-                        
+
                     }
-                    
+
                     if (b != null) {
                         binnersByName.put(b.getBinName(), b);
                     }
@@ -256,10 +255,10 @@ public class DataBinningProcessor extends AbstractProcessor {
                 StopWatch binnerWatch = new StopWatch(true);
                 log.debug("Running Binner [ " + b.getBinName() + " ]");
                 List<String> binNames = b.generateBinNames(json);
-
-                for (final String binName : binNames) {
+                //issues w/ for-each loop here due to concurrent modification
+                for (int i = 0; i < binNames.size(); i++) {
                     Map<String, Object> map = new HashMap<>();
-                    map.put("name", binName);
+                    map.put("name", binNames.get(i));
                     map.put("count", 1);
                     binAndCount.add(map);
                 }
@@ -303,7 +302,7 @@ public class DataBinningProcessor extends AbstractProcessor {
                     bin = session.putAttribute(bin, CoreAttributes.FILENAME.key(), "bins-" + original.getAttribute(CoreAttributes.FILENAME.key()) + ".json");
                     bin = session.putAttribute(bin, CoreAttributes.MIME_TYPE.key(), "application/json");
                     session.transfer(bin, REL_BIN);
-                    
+
                     break;
                 }
             }
