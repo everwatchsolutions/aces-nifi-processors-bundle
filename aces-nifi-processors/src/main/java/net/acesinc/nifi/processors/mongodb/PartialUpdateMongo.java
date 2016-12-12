@@ -70,6 +70,18 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
     protected static final String MODE_MANY = "many";
 
     protected static final String OPERATION_ADD_TO_SET = "$addToSet";
+    /**
+     * This OPERATIION should not be advertised in the operations, but we will
+     * advertise the one it tightly-couples with together
+     * OPERATION_ADD_TO_SET_WITH_EACH
+     */
+    protected static final String OPERATION_EACH = "$each";
+    /**
+     * For adding item from an array and appending them into an array. This is
+     * supposed to avoid multi-dimensional arrays with updating arrays to
+     * arrays.
+     */
+    protected static final String OPERATION_ADD_TO_SET_WITH_EACH = "$addToSetWithEach";
     protected static final String OPERATION_SET = "$set";
     protected static final String OPERATION_CURRENT_DATE = "$currentDate";
     protected static final String OPERATION_INC = "$inc";
@@ -83,9 +95,9 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
 
     protected static final PropertyDescriptor OPERATION = new PropertyDescriptor.Builder()
             .name("Operation")
-            .description("The MongoDB Operation we should perform")
+            .description("The MongoDB Operation we should perform. $addToSet with $each only works in single update mode and with just updating one array property.")
             .required(true)
-            .allowableValues(OPERATION_ADD_TO_SET, OPERATION_SET, OPERATION_CURRENT_DATE, OPERATION_INC)
+            .allowableValues(OPERATION_ADD_TO_SET, OPERATION_ADD_TO_SET_WITH_EACH, OPERATION_SET, OPERATION_CURRENT_DATE, OPERATION_INC)
             .build();
     protected static final PropertyDescriptor MODE = new PropertyDescriptor.Builder()
             .name("Mode")
@@ -205,7 +217,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
                     updatedDocs.add(doc);
                 }
 
-                BulkWriteResult result = performBlukUpdate(updateDocs, context, session);
+                BulkWriteResult result = performBulkUpdate(updateDocs, context, session);
 
                 //clean up after ourselves
                 for (Document doc : updatedDocs) {
@@ -261,7 +273,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
         }
     }
 
-    protected Map<String, Document> prepareUpdate(FlowFile flowFile, Document doc, ProcessContext context, ProcessSession session) {
+    protected Map<String, Document> prepareUpdate(FlowFile flowFile, Document doc, ProcessContext context, ProcessSession session) throws IOException {
         final ProcessorLog logger = getLogger();
 
         Map<String, Document> queryAndUpdateDocs = new HashMap<>();
@@ -318,19 +330,32 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
         } else {
 //            logger.info("Adding update for property [ " + propertyName + " ]");
             Document operationValue = null;
-            if (!OPERATION_CURRENT_DATE.equals(operation)) {
-                operationValue = new Document(propertyName, doc.get(propertyName));
-            } else {
+            if (OPERATION_CURRENT_DATE.equals(operation)) {
                 operationValue = new Document(propertyName, true);
+                updateDocument.append(operation, operationValue);
+            } else if (OPERATION_ADD_TO_SET_WITH_EACH.equals(operation)) {
+                //WARNING:  This operation expects each thing to be an array.  Do NOT use if not or make sure each thing listed that is not a key is an array.
+                String jsonString = mapper.writeValueAsString(doc.get(propertyName));
+                List<Map<String, Object>> operationValueDocs = mapper.readValue(jsonString, List.class);
+//                db.inventory.update(
+//                                   { _id: 2 },
+//                                   { $addToSet: { tags: { $each: [ "camera", "electronics", "accessories" ] } } }
+//                                   )
+
+                Document eachDoc = new Document(OPERATION_EACH, operationValueDocs);
+                Document arrayDoc = new Document(propertyName, eachDoc);
+                updateDocument.append(OPERATION_ADD_TO_SET, arrayDoc);
+            } else {
+                operationValue = new Document(propertyName, doc.get(propertyName));
+                updateDocument.append(operation, operationValue);
             }
-            updateDocument.append(operation, operationValue);
         }
         queryAndUpdateDocs.put("update", updateDocument);
 
         return queryAndUpdateDocs;
     }
 
-    protected BulkWriteResult performBlukUpdate(List<Map<String, Document>> updateDocs, ProcessContext context, ProcessSession session) {
+    protected BulkWriteResult performBulkUpdate(List<Map<String, Document>> updateDocs, ProcessContext context, ProcessSession session) {
         final ProcessorLog logger = getLogger();
         StopWatch watch = new StopWatch(true);
 
@@ -388,7 +413,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
         }
     }
 
-    protected UpdateResult performUpdate(FlowFile flowFile, Document doc, ProcessContext context, ProcessSession session) {
+    protected UpdateResult performUpdate(FlowFile flowFile, Document doc, ProcessContext context, ProcessSession session) throws IOException {
         Map<String, Document> queryAndUpdate = prepareUpdate(flowFile, doc, context, session);
 
         Document query = queryAndUpdate.get("query");
@@ -424,5 +449,5 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
         }
         return writeConcern;
     }
-    
+
 }
