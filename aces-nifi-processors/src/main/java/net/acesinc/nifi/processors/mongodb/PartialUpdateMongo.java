@@ -70,21 +70,14 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
     protected static final String MODE_MANY = "many";
 
     protected static final String OPERATION_ADD_TO_SET = "$addToSet";
-    /**
-     * This OPERATIION should not be advertised in the operations, but we will
-     * advertise the one it tightly-couples with together
-     * OPERATION_ADD_TO_SET_WITH_EACH
-     */
-    protected static final String OPERATION_EACH = "$each";
-    /**
-     * For adding item from an array and appending them into an array. This is
-     * supposed to avoid multi-dimensional arrays with updating arrays to
-     * arrays.
-     */
-    protected static final String OPERATION_ADD_TO_SET_WITH_EACH = "$addToSetWithEach";
     protected static final String OPERATION_SET = "$set";
     protected static final String OPERATION_CURRENT_DATE = "$currentDate";
     protected static final String OPERATION_INC = "$inc";
+    /**
+     * $each is not to be viewable in the list of options. This is used in
+     * conjuction with $addToSet.
+     */
+    protected static final String OPERATION_EACH = "$each";
 
     protected static final String WRITE_CONCERN_ACKNOWLEDGED = "ACKNOWLEDGED";
     protected static final String WRITE_CONCERN_UNACKNOWLEDGED = "UNACKNOWLEDGED";
@@ -95,9 +88,9 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
 
     protected static final PropertyDescriptor OPERATION = new PropertyDescriptor.Builder()
             .name("Operation")
-            .description("The MongoDB Operation we should perform. $addToSet with $each only works in single update mode and with just updating one array property.")
+            .description("The MongoDB Operation we should perform")
             .required(true)
-            .allowableValues(OPERATION_ADD_TO_SET, OPERATION_ADD_TO_SET_WITH_EACH, OPERATION_SET, OPERATION_CURRENT_DATE, OPERATION_INC)
+            .allowableValues(OPERATION_ADD_TO_SET, OPERATION_SET, OPERATION_CURRENT_DATE, OPERATION_INC)
             .build();
     protected static final PropertyDescriptor MODE = new PropertyDescriptor.Builder()
             .name("Mode")
@@ -217,7 +210,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
                     updatedDocs.add(doc);
                 }
 
-                BulkWriteResult result = performBulkUpdate(updateDocs, context, session);
+                BulkWriteResult result = performBlukUpdate(updateDocs, context, session);
 
                 //clean up after ourselves
                 for (Document doc : updatedDocs) {
@@ -309,7 +302,31 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
             for (String p : props) {
                 p = p.trim();
 
-                if (!OPERATION_CURRENT_DATE.equals(operation)) {
+                if (OPERATION_CURRENT_DATE.equals(operation)) {
+                    operationValues.append(p, true);
+                } else if (OPERATION_ADD_TO_SET.equals(operation) && doc.get(p) != null) {
+                    String jsonString = mapper.writeValueAsString(doc.get(p));
+                    //looking for an array to use $each mode
+                    if (jsonString.contains("[")) {
+                        List<Map<String, Object>> operationValueDocs = mapper.readValue(jsonString, List.class);
+//                db.inventory.update(
+//                                   { _id: 2 },
+//                                   { $addToSet: { tags: { $each: [ "camera", "electronics", "accessories" ] } } }
+//                                   )
+
+                        Document eachDoc = new Document(OPERATION_EACH, operationValueDocs);
+                        operationValues.append(p, eachDoc);
+                    } else {
+                        Object origValue = doc.get(p);
+//                    logger.info("Adding update for property [ " + p + " ] with value [ " + origValue + " ]");
+                        if (origValue != null) {
+                            operationValues.append(p, doc.get(p));
+                        } else {
+                            //input document didn't have the specified key. skipping. 
+                            logger.debug("Input document did not have value for key [ " + p + " ]. Skipping");
+                        }
+                    }
+                } else {
                     Object origValue = doc.get(p);
 //                    logger.info("Adding update for property [ " + p + " ] with value [ " + origValue + " ]");
                     if (origValue != null) {
@@ -318,8 +335,6 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
                         //input document didn't have the specified key. skipping. 
                         logger.debug("Input document did not have value for key [ " + p + " ]. Skipping");
                     }
-                } else {
-                    operationValues.append(p, true);
                 }
             }
             if (!operationValues.isEmpty()) {
@@ -330,23 +345,30 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
         } else {
 //            logger.info("Adding update for property [ " + propertyName + " ]");
             Document operationValue = null;
+
             if (OPERATION_CURRENT_DATE.equals(operation)) {
+                //prepare to check if this is an array first
                 operationValue = new Document(propertyName, true);
                 updateDocument.append(operation, operationValue);
-            } else if (OPERATION_ADD_TO_SET_WITH_EACH.equals(operation)) {
-                //WARNING:  This operation expects each thing to be an array.  Do NOT use if not or make sure each thing listed that is not a key is an array.
+            } else if (OPERATION_ADD_TO_SET.equals(operation) && doc.get(propertyName) != null) {
                 String jsonString = mapper.writeValueAsString(doc.get(propertyName));
-                List<Map<String, Object>> operationValueDocs = mapper.readValue(jsonString, List.class);
+                //looking for an array to use $each mode
+                if (jsonString.contains("[")) {
+                    List<Map<String, Object>> operationValueDocs = mapper.readValue(jsonString, List.class);
 //                db.inventory.update(
 //                                   { _id: 2 },
 //                                   { $addToSet: { tags: { $each: [ "camera", "electronics", "accessories" ] } } }
 //                                   )
 
-                Document eachDoc = new Document(OPERATION_EACH, operationValueDocs);
-                Document arrayDoc = new Document(propertyName, eachDoc);
-                updateDocument.append(OPERATION_ADD_TO_SET, arrayDoc);
+                    Document eachDoc = new Document(OPERATION_EACH, operationValueDocs);
+                    Document arrayDoc = new Document(propertyName, eachDoc);
+                    updateDocument.append(operation, arrayDoc);
+                } else {
+                    operationValue = new Document(propertyName, doc.get(propertyName));
+                    updateDocument.append(operation, operationValue);
+                }
             } else {
-                operationValue = new Document(propertyName, doc.get(propertyName));
+                operationValue = new Document(propertyName, true);
                 updateDocument.append(operation, operationValue);
             }
         }
@@ -355,7 +377,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
         return queryAndUpdateDocs;
     }
 
-    protected BulkWriteResult performBulkUpdate(List<Map<String, Document>> updateDocs, ProcessContext context, ProcessSession session) {
+    protected BulkWriteResult performBlukUpdate(List<Map<String, Document>> updateDocs, ProcessContext context, ProcessSession session) {
         final ProcessorLog logger = getLogger();
         StopWatch watch = new StopWatch(true);
 
