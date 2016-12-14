@@ -368,7 +368,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
                     updateDocument.append(operation, operationValue);
                 }
             } else {
-                operationValue = new Document(propertyName, true);
+                operationValue = new Document(propertyName, doc.get(propertyName));
                 updateDocument.append(operation, operationValue);
             }
         }
