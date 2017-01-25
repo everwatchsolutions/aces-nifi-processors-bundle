@@ -33,11 +33,10 @@ import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
-import org.apache.nifi.logging.ProcessorLog;
+import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
-import org.apache.nifi.processor.exception.FlowFileAccessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.io.InputStreamCallback;
@@ -169,7 +168,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
             return;
         }
 
-        final ProcessorLog logger = getLogger();
+        final ComponentLog logger = getLogger();
 
         final Charset charset = Charset.forName(context.getProperty(CHARACTER_SET).getValue());
 
@@ -243,7 +242,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
     }
 
     protected void transferFlowFile(FlowFile f, Object result, ProcessContext context, ProcessSession session) {
-        final ProcessorLog logger = getLogger();
+        final ComponentLog logger = getLogger();
         session.getProvenanceReporter().send(f, context.getProperty(URI).getValue());
         if (result != null) {
             long modifiedCount = 0;
@@ -267,7 +266,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
     }
 
     protected Map<String, Document> prepareUpdate(FlowFile flowFile, Document doc, ProcessContext context, ProcessSession session) throws IOException {
-        final ProcessorLog logger = getLogger();
+        final ComponentLog logger = getLogger();
 
         Map<String, Document> queryAndUpdateDocs = new HashMap<>();
 
@@ -378,7 +377,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
     }
 
     protected BulkWriteResult performBlukUpdate(List<Map<String, Document>> updateDocs, ProcessContext context, ProcessSession session) {
-        final ProcessorLog logger = getLogger();
+        final ComponentLog logger = getLogger();
         StopWatch watch = new StopWatch(true);
 
         logger.debug("Performing Bulk Update of [ " + updateDocs.size() + " ] documents");
@@ -403,7 +402,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
     }
 
     protected UpdateResult performSingleUpdate(Document query, Document updateDocument, ProcessContext context, ProcessSession session) {
-        final ProcessorLog logger = getLogger();
+        final ComponentLog logger = getLogger();
         StopWatch watch = new StopWatch(true);
 
         final String mode = context.getProperty(MODE).getValue();

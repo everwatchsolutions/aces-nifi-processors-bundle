@@ -35,7 +35,7 @@ import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
-import org.apache.nifi.logging.ProcessorLog;
+import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -127,8 +127,7 @@ public class DataBinningProcessor extends AbstractProcessor {
 
     @OnScheduled
     public void setup(final ProcessContext context) throws IOException {
-        final ProcessorLog log = getLogger();
-
+        final ComponentLog log = getLogger();
         configuredBinners = new ArrayList<>();
 
         if (context.getProperty(BINNER_CONFIG).isSet()) {
@@ -234,7 +233,7 @@ public class DataBinningProcessor extends AbstractProcessor {
             return;
         }
 
-        final ProcessorLog log = getLogger();
+        final ComponentLog log = getLogger();
         final StopWatch watch = new StopWatch(true);
 
         try {
