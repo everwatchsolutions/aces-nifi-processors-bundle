@@ -48,9 +48,9 @@ import org.apache.nifi.processor.util.StandardValidators;
  */
 @EventDriven
 @SideEffectFree
-@Tags({"json", "convert", "attribute", "attributes", "types", "String", "Integer", "Double", "Date"})
+@Tags({"json", "convert", "attribute", "attributes", "types", "String", "Integer", "Double", "Date", "array", "sum of array"})
 @InputRequirement(InputRequirement.Requirement.INPUT_REQUIRED)
-@CapabilityDescription("Takes in a String list, Integer list, Double list, and Date list of attributes and converts the attributes accordingly in JSON format based on what type-list the item is placed in.  Boolean values should be listed in String list and will automatically be converted to Boolean.")
+@CapabilityDescription("Takes in a String list, Integer list, Double list, and Date list of attributes and converts the attributes accordingly in JSON format based on what type-list the item is placed in.  Boolean values should be listed in String list and will automatically be converted to Boolean. Performs sums on Integer or Double attributes that are arrays.")
 @WritesAttribute(attribute = "See additional details", description = "This processor may write or remove zero or more attributes as described in additional details")
 public class BetterAttributesToJSON extends AbstractProcessor {
 
@@ -104,6 +104,31 @@ public class BetterAttributesToJSON extends AbstractProcessor {
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
 
+    /**
+     * to provide list of attributes that consist of an array of Double values
+     * that will be converted to the sum of those array values
+     */
+    public static final PropertyDescriptor DOUBLE_ARRAY_TO_SUM_VALUE_ATTRIBUTES_LIST = new PropertyDescriptor.Builder()
+            .name("Double Array To Sum Value Attributes List")
+            .description("Comma separated list of attributes to be included in the resulting JSON as the sum of its own Double array values. "
+                    + "Thus, each attribute that has an array of Doubles that is listed here will return a sum. If this value "
+                    + "is left empty then this is ignored.")
+            .required(false)
+            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+            .build();
+    /**
+     * to provide list of attributes that consist of an array of Integer values
+     * that will be converted to the sum of those array values
+     */
+    public static final PropertyDescriptor INT_ARRAY_TO_SUM_VALUE_ATTRIBUTES_LIST = new PropertyDescriptor.Builder()
+            .name("Integer Array To Sum Value Attributes List")
+            .description("Comma separated list of attributes to be included in the resulting JSON as the sum of its own Integer array values. "
+                    + "Thus, each attribute that has an array of Integers that is listed here will return a sum. If this value "
+                    + "is left empty then this is ignored.")
+            .required(false)
+            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+            .build();
+
     public static final Relationship REL_SUCCESS = new Relationship.Builder().name("success")
             .description("Successfully converted raw security marking attribute to multiple attributes").build();
     public static final Relationship REL_FAILURE = new Relationship.Builder().name("failure")
@@ -119,6 +144,8 @@ public class BetterAttributesToJSON extends AbstractProcessor {
         _properties.add(INT_ATTRIBUTES_LIST);
         _properties.add(DOUBLE_ATTRIBUTES_LIST);
         _properties.add(EPOCH_TO_DATES_ATTRIBUTES_LIST);
+        _properties.add(DOUBLE_ARRAY_TO_SUM_VALUE_ATTRIBUTES_LIST);
+        _properties.add(INT_ARRAY_TO_SUM_VALUE_ATTRIBUTES_LIST);
         properties = Collections.unmodifiableList(_properties);
 
         final Set<Relationship> _relationships = new HashSet<>();
@@ -146,6 +173,9 @@ public class BetterAttributesToJSON extends AbstractProcessor {
      * @param atrListForIntValues
      * @param atrListForDoubleValues
      * @param atrListForLongEpochToGoToDateValues
+     * @param atrListForDoubleArraysToGoToDoubleSumValues
+     * @param atrListForIntegerArraysToGoToIntegerSumValues
+     *
      * @return Map of values that are feed to a Jackson ObjectMapper
      * @throws java.io.IOException
      */
@@ -154,7 +184,9 @@ public class BetterAttributesToJSON extends AbstractProcessor {
             String atrListForStringValues,
             String atrListForIntValues,
             String atrListForDoubleValues,
-            String atrListForLongEpochToGoToDateValues) throws IOException {
+            String atrListForLongEpochToGoToDateValues,
+            String atrListForDoubleArraysToGoToDoubleSumValues,
+            String atrListForIntegerArraysToGoToIntegerSumValues) throws IOException {
         Map<String, Object> atsToWrite = new HashMap<>();
 
         //handle all the string values
@@ -230,7 +262,48 @@ public class BetterAttributesToJSON extends AbstractProcessor {
                 }
             }
         }
-
+        //handle all double Arrays to give sums of array
+        if (StringUtils.isNotBlank(atrListForDoubleArraysToGoToDoubleSumValues)) {
+            String[] ats = StringUtils.split(atrListForDoubleArraysToGoToDoubleSumValues, AT_LIST_SEPARATOR);
+            if (ats != null) {
+                for (String str : ats) {
+                    String cleanStr = str.trim();
+                    String jsonArray = ff.getAttribute(cleanStr);
+                    if (jsonArray != null) {
+                        ObjectMapper objMapper = new ObjectMapper();
+                        Double[] doubleValues = objMapper.readValue(jsonArray, Double[].class);
+                        Double sum = 0.0D;
+                        for (Double val : doubleValues) {
+                            sum += val;
+                        }
+                        atsToWrite.put(cleanStr, sum);
+                    } else {
+                        atsToWrite.put(cleanStr, null);
+                    }
+                }
+            }
+        }
+        //handle all integer Arrays to give sums of array
+        if (StringUtils.isNotBlank(atrListForDoubleArraysToGoToDoubleSumValues)) {
+            String[] ats = StringUtils.split(atrListForIntegerArraysToGoToIntegerSumValues, AT_LIST_SEPARATOR);
+            if (ats != null) {
+                for (String str : ats) {
+                    String cleanStr = str.trim();
+                    String jsonArray = ff.getAttribute(cleanStr);
+                    if (jsonArray != null) {
+                        ObjectMapper objMapper = new ObjectMapper();
+                        Integer[] intValues = objMapper.readValue(jsonArray, Integer[].class);
+                        Integer sum = 0;
+                        for (Integer val : intValues) {
+                            sum += val;
+                        }
+                        atsToWrite.put(cleanStr, sum);
+                    } else {
+                        atsToWrite.put(cleanStr, null);
+                    }
+                }
+            }
+        }
         return atsToWrite;
     }
 
@@ -246,7 +319,9 @@ public class BetterAttributesToJSON extends AbstractProcessor {
                     context.getProperty(STRING_ATTRIBUTES_LIST).getValue(),
                     context.getProperty(INT_ATTRIBUTES_LIST).getValue(),
                     context.getProperty(DOUBLE_ATTRIBUTES_LIST).getValue(),
-                    context.getProperty(EPOCH_TO_DATES_ATTRIBUTES_LIST).getValue());
+                    context.getProperty(EPOCH_TO_DATES_ATTRIBUTES_LIST).getValue(),
+                    context.getProperty(DOUBLE_ARRAY_TO_SUM_VALUE_ATTRIBUTES_LIST).getValue(),
+                    context.getProperty(INT_ARRAY_TO_SUM_VALUE_ATTRIBUTES_LIST).getValue());
 
             FlowFile conFlowfile = session.write(original, new StreamCallback() {
                 @Override
