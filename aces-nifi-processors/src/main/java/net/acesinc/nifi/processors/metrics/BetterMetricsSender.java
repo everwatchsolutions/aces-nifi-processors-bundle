@@ -20,6 +20,7 @@ import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.nifi.annotation.behavior.EventDriven;
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.SideEffectFree;
+import org.apache.nifi.annotation.behavior.SupportsBatching;
 import org.apache.nifi.annotation.behavior.WritesAttribute;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
@@ -53,6 +54,7 @@ import org.springframework.web.client.RestTemplate;
 @InputRequirement(InputRequirement.Requirement.INPUT_REQUIRED)
 @CapabilityDescription("Publishes metrics from NiFi to Better Metrics Service. ")
 @WritesAttribute(attribute = "See additional details", description = "This processor may write or remove zero or more attributes as described in additional details")
+@SupportsBatching
 public class BetterMetricsSender extends AbstractProcessor {
 
     public static final PropertyDescriptor SSL_CONTEXT = new PropertyDescriptor.Builder()
@@ -180,7 +182,11 @@ public class BetterMetricsSender extends AbstractProcessor {
 
         final FlowFile original = session.get();
         if (original == null) {
-            logger.error("Incoming flow file is null! Abort!");
+            //WARNING: there purpose in this block here is to quiet down the alerting within the NiFi UI -- this will log it, but not bog down the UI
+            logger.info("Incoming flow file is null! Abort!");
+            //NOTE: rollback and transfer-success did not work will in this scenario even when creating a brand-new session.  
+            //Doing a commit is not perfectly correct, but behaves the best in this attempt to quied down the NiFi UI logging alerts for this unrecoverable scenario.
+            session.commit();
             return;
         }
 
