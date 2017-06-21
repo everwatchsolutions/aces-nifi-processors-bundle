@@ -5,7 +5,6 @@
  */
 package net.acesinc.nifi.processors.metrics;
 
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
@@ -13,6 +12,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import net.acesinc.metrics.model.receiving.MetricStatusUpdate;
+import static net.acesinc.nifi.processors.metrics.BetterMetricsSender.REL_SUCCESS;
 import org.apache.http.client.HttpClient;
 import org.apache.http.conn.ssl.NoopHostnameVerifier;
 import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
@@ -40,7 +40,6 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 
@@ -56,6 +55,8 @@ import org.springframework.web.client.RestTemplate;
 @WritesAttribute(attribute = "See additional details", description = "This processor may write or remove zero or more attributes as described in additional details")
 @SupportsBatching
 public class BetterMetricsSender extends AbstractProcessor {
+
+    private static final int TIMEOUT = 540000; //milliseconds
 
     public static final PropertyDescriptor SSL_CONTEXT = new PropertyDescriptor.Builder()
             .name("SSL Context Service")
@@ -200,45 +201,39 @@ public class BetterMetricsSender extends AbstractProcessor {
         metricStatus.setHostname(hostname);
         metricStatus.setSite(site);
         metricStatus.setDataSizeIngested(flowFileSize);
-        this.toService(sslService, metricsCollectorUrl, metricStatus, new Date());
-        session.transfer(original, REL_SUCCESS);
-    }
-
-    public RestTemplate getSecureRestTemplate(final SSLContextService sslService) throws NoSuchAlgorithmException {
         SSLConnectionSocketFactory sf = new SSLConnectionSocketFactory(sslService.createSSLContext(SSLContextService.ClientAuth.WANT), new NoopHostnameVerifier());
         HttpClient httpClient = HttpClientBuilder.create().setSSLSocketFactory(sf).build();
-        ClientHttpRequestFactory requestFactory = new HttpComponentsClientHttpRequestFactory(httpClient);
-        return new RestTemplate(requestFactory);
-    }
+        HttpComponentsClientHttpRequestFactory requestFactory = new HttpComponentsClientHttpRequestFactory(httpClient);
+        requestFactory.setBufferRequestBody(false);//when we have a lot of calls, we should set to false
+        requestFactory.setConnectTimeout(TIMEOUT);
+        requestFactory.setReadTimeout(TIMEOUT);
+        RestTemplate restTemplate = new RestTemplate(requestFactory);
+        getLogger().debug("Sending metrics {} to Custom MetricService", new Object[]{metricStatus.toString()});
+        HttpHeaders requestHeaders = new HttpHeaders();
+        requestHeaders.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<MetricStatusUpdate> requestEntity = new HttpEntity(metricStatus, requestHeaders);
+        //DISCLAIMER: this is communicating to an asynch service endpoint.  
+        //Unfortunately, this processor runs out of memory on nifi when using the more correct asynch client. 
+        //Using this technique simply works better in practice. The service endpoint doesn't return anything now as a precaution.
+        ResponseEntity response = restTemplate.exchange(
+                metricsCollectorUrl,
+                HttpMethod.POST,
+                requestEntity,
+                String.class
+        );
 
-    public void toService(final SSLContextService sslService, String serviceUrl, MetricStatusUpdate metricStatus, Date stamp) {
-        try {
-            getLogger().debug("Sending metrics {} to Custom MetricService", new Object[]{metricStatus.toString()});
-            RestTemplate restTemplate = this.getSecureRestTemplate(sslService);
-            HttpHeaders requestHeaders = new HttpHeaders();
-            requestHeaders.setContentType(MediaType.APPLICATION_JSON);
-            HttpEntity<MetricStatusUpdate> requestEntity = new HttpEntity(metricStatus, requestHeaders);
-            ResponseEntity response = restTemplate.exchange(
-                    serviceUrl,
-                    HttpMethod.POST,
-                    requestEntity,
-                    String.class
-            );
-            //expect a null back and throw it away -- we get nothing back
-            if (response.getStatusCode().equals(HttpStatus.OK)) {
-                getLogger().info("Successfully sent metrics to Custom MetricService at epoch {} ", new Object[]{System.currentTimeMillis()});
-                String result = (String) response.getBody();
-                getLogger().info("Successfully received response from Custom MetricService: {}", new Object[]{result});
+        //expect a null back and throw it away -- we get nothing back
+        if (response.getStatusCode().equals(HttpStatus.OK)) {
+            getLogger().info("Successfully sent metrics to Custom MetricService at epoch {} ", new Object[]{System.currentTimeMillis()});
+            getLogger().info("Successfully received asynch response from Custom MetricService.");
+        } else {
+            if (response.hasBody()) {
+                getLogger().error("Error sending metrics to Custom MetricService due to {} - {}", new Object[]{response.getStatusCode(), response.getBody()});
             } else {
-                if (response.hasBody()) {
-                    getLogger().error("Error sending metrics to Custom MetricService due to {} - {}", new Object[]{response.getStatusCode(), response.getBody()});
-                } else {
-                    getLogger().error("Error sending metrics to Custom MetricService due to status code: {}", new Object[]{response.getStatusCode()});
-                }
+                getLogger().error("Error sending metrics to Custom MetricService due to status code: {}", new Object[]{response.getStatusCode()});
             }
-        } catch (NoSuchAlgorithmException ex) {
-            getLogger().error("no such algorithm exception", ex);
         }
+        session.transfer(original, REL_SUCCESS);
     }
 
 }
