@@ -184,7 +184,7 @@ public class BetterMetricsSender extends AbstractProcessor {
         final FlowFile original = session.get();
         if (original == null) {
             //WARNING: there purpose in this block here is to quiet down the alerting within the NiFi UI -- this will log it, but not bog down the UI
-            logger.info("Incoming flow file is null! Abort!");
+//            logger.info("Incoming flow file is null! Abort!"); --> makes logs too large
             //NOTE: rollback and transfer-success did not work will in this scenario even when creating a brand-new session.  
             //Doing a commit is not perfectly correct, but behaves the best in this attempt to quied down the NiFi UI logging alerts for this unrecoverable scenario.
             session.commit();
