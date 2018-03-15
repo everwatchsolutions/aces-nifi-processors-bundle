@@ -72,6 +72,16 @@ public class ConvertSecurityMarkingAndAttrListIntoJson extends AbstractProcessor
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
     /**
+     * to provide a list of attributes to serialize out as booleans in JSON
+     */
+    public static final PropertyDescriptor BOOLEAN_ATTRIBUTES_LIST = new PropertyDescriptor.Builder()
+            .name("Boolean Attributes List")
+            .description("Comma separated list of attributes to be included in the resulting JSON as boolean values. If this value "
+                    + "is left empty then this is ignored.")
+            .required(false)
+            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+            .build();
+    /**
      * to provide a list of attributes to serialize out as integers in JSON
      */
     public static final PropertyDescriptor INT_ATTRIBUTES_LIST = new PropertyDescriptor.Builder()
@@ -141,6 +151,7 @@ public class ConvertSecurityMarkingAndAttrListIntoJson extends AbstractProcessor
 
         final List<PropertyDescriptor> _properties = new ArrayList<>();
         _properties.add(STRING_ATTRIBUTES_LIST);
+        _properties.add(BOOLEAN_ATTRIBUTES_LIST);
         _properties.add(INT_ATTRIBUTES_LIST);
         _properties.add(DOUBLE_ATTRIBUTES_LIST);
         _properties.add(EPOCH_TO_DATES_ATTRIBUTES_LIST);
@@ -274,6 +285,7 @@ public class ConvertSecurityMarkingAndAttrListIntoJson extends AbstractProcessor
      * @param ff
      * @param rawSecurityMarking
      * @param atrListForStringValues
+     * @param atrListForBooleanValues
      * @param atrListForIntValues
      * @param atrListForDoubleValues
      * @param atrListForLongEpochToGoToDateValues
@@ -285,6 +297,7 @@ public class ConvertSecurityMarkingAndAttrListIntoJson extends AbstractProcessor
             FlowFile ff,
             String rawSecurityMarking,
             String atrListForStringValues,
+            String atrListForBooleanValues,
             String atrListForIntValues,
             String atrListForDoubleValues,
             String atrListForLongEpochToGoToDateValues,
@@ -310,6 +323,22 @@ public class ConvertSecurityMarkingAndAttrListIntoJson extends AbstractProcessor
 
         } else {
             atsToWrite.putAll(ff.getAttributes());
+        }
+        //handle all boolean values
+        if (StringUtils.isNotBlank(atrListForBooleanValues)) {
+            String[] ats = StringUtils.split(atrListForBooleanValues, AT_LIST_SEPARATOR);
+            if (ats != null) {
+                for (String str : ats) {
+                    String cleanStr = str.trim();
+                    String val = ff.getAttribute(cleanStr);
+                    if (val != null) {
+                        atsToWrite.put(cleanStr, Boolean.parseBoolean(val));
+                    } else {
+                        //for boolean, place false and not null when null value -- special case
+                        atsToWrite.put(cleanStr, false);
+                    }
+                }
+            }
         }
         //handle all int values
         if (StringUtils.isNotBlank(atrListForIntValues)) {
@@ -401,6 +430,7 @@ public class ConvertSecurityMarkingAndAttrListIntoJson extends AbstractProcessor
             final Map<String, Object> attrsToUpdate = buildSecurityAttributesMapForFlowFileAndBringInFlowAttrs(original,
                     context.getProperty(RAW_SECURITY_MARKING_FROM_FILE_NAME).evaluateAttributeExpressions(original).getValue(),
                     context.getProperty(STRING_ATTRIBUTES_LIST).getValue(),
+                    context.getProperty(BOOLEAN_ATTRIBUTES_LIST).getValue(),
                     context.getProperty(INT_ATTRIBUTES_LIST).getValue(),
                     context.getProperty(DOUBLE_ATTRIBUTES_LIST).getValue(),
                     context.getProperty(EPOCH_TO_DATES_ATTRIBUTES_LIST).getValue(),
