@@ -19,7 +19,7 @@
     <parent>
         <groupId>org.apache.nifi</groupId>
         <artifactId>nifi-nar-bundles</artifactId>
-        <version>1.3.0</version>
+        <version>1.6.0</version>
     </parent>
 
     <groupId>net.acesinc.nifi</groupId>
@@ -27,6 +27,11 @@
     <artifactId>aces-nifi-processors-bundle</artifactId>
     <packaging>pom</packaging>
 
+    <properties>
+        <nifi.version>1.6.0</nifi.version>
+        <mongo.version>3.4.3</mongo.version>
+    </properties>
+    
     <modules>
         <module>aces-nifi-processors</module>
         <module>aces-nifi-nar</module>
