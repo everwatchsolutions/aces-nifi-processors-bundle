@@ -41,7 +41,7 @@ import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.io.InputStreamCallback;
 import org.apache.nifi.processor.io.OutputStreamCallback;
-import org.apache.nifi.processors.mongodb.AbstractMongoProcessor;
+import org.apache.nifi.processors.mongodb.AbstractMongoBridgeProcessor;
 import org.apache.nifi.stream.io.StreamUtils;
 import org.apache.nifi.util.StopWatch;
 import org.bson.Document;
@@ -54,7 +54,7 @@ import org.bson.Document;
 @Tags({"mongodb", "insert", "update", "write", "put"})
 @InputRequirement(InputRequirement.Requirement.INPUT_REQUIRED)
 @CapabilityDescription("Updates a MongoDB document using the contents of a FlowFile")
-public class PartialUpdateMongo extends AbstractMongoProcessor {
+public class PartialUpdateMongo extends AbstractMongoBridgeProcessor {
 
     protected static final Relationship REL_SUCCESS = new Relationship.Builder().name("success")
             .description("FlowFiles that resulted in a successful update to some documents in MongoDB are routed to this relationship").build();
@@ -79,10 +79,11 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
     protected static final String OPERATION_EACH = "$each";
 
     protected static final String WRITE_CONCERN_ACKNOWLEDGED = "ACKNOWLEDGED";
+    protected static final String WRITE_CONCERN_W1 = "W1";
+    protected static final String WRITE_CONCERN_W2 = "W2";
+    protected static final String WRITE_CONCERN_W3 = "W3";
     protected static final String WRITE_CONCERN_UNACKNOWLEDGED = "UNACKNOWLEDGED";
-    protected static final String WRITE_CONCERN_FSYNCED = "FSYNCED";
     protected static final String WRITE_CONCERN_JOURNALED = "JOURNALED";
-    protected static final String WRITE_CONCERN_REPLICA_ACKNOWLEDGED = "REPLICA_ACKNOWLEDGED";
     protected static final String WRITE_CONCERN_MAJORITY = "MAJORITY";
 
     protected static final PropertyDescriptor OPERATION = new PropertyDescriptor.Builder()
@@ -114,8 +115,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
             .name("Write Concern")
             .description("The write concern to use")
             .required(true)
-            .allowableValues(WRITE_CONCERN_ACKNOWLEDGED, WRITE_CONCERN_UNACKNOWLEDGED, WRITE_CONCERN_FSYNCED, WRITE_CONCERN_JOURNALED,
-                    WRITE_CONCERN_REPLICA_ACKNOWLEDGED, WRITE_CONCERN_MAJORITY)
+            .allowableValues(WRITE_CONCERN_ACKNOWLEDGED, WRITE_CONCERN_W1, WRITE_CONCERN_W2, WRITE_CONCERN_W3, WRITE_CONCERN_UNACKNOWLEDGED, WRITE_CONCERN_JOURNALED, WRITE_CONCERN_MAJORITY)
             .defaultValue(WRITE_CONCERN_ACKNOWLEDGED)
             .build();
     protected static final PropertyDescriptor CHARACTER_SET = new PropertyDescriptor.Builder()
@@ -132,9 +132,10 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
 
     static {
         List<PropertyDescriptor> _propertyDescriptors = new ArrayList<>();
-        _propertyDescriptors.add(URI);
-        _propertyDescriptors.add(DATABASE_NAME);
-        _propertyDescriptors.add(COLLECTION_NAME);
+        //NOTE: This processor did not originally support SSL and has not been tested w/ use of it. 
+        //We are now including the SSL CONTEXT SERVICE and the CLIENT AUTH NAME in this processor for now as that was the easiest thing to do for now.
+        //We could choose later to filter out these, but for now they are there.
+        _propertyDescriptors.addAll(propDescriptors);
         _propertyDescriptors.add(MODE);
         _propertyDescriptors.add(UPDATE_QUERY_KEY);
         _propertyDescriptors.add(OPERATION);
@@ -209,7 +210,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
                     updatedDocs.add(doc);
                 }
 
-                BulkWriteResult result = performBlukUpdate(updateDocs, context, session);
+                BulkWriteResult result = performBulkUpdate(flowFile, updateDocs, context, session);
 
                 //clean up after ourselves
                 for (Document doc : updatedDocs) {
@@ -243,7 +244,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
 
     protected void transferFlowFile(FlowFile f, Object result, ProcessContext context, ProcessSession session) {
         final ComponentLog logger = getLogger();
-        session.getProvenanceReporter().send(f, context.getProperty(URI).getValue());
+        session.getProvenanceReporter().send(f, this.getURI(context));
         if (result != null) {
             long modifiedCount = 0;
             if (result instanceof UpdateResult) {
@@ -260,7 +261,7 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
             }
         } else {
             logger.warn("Update Document was empty and ther was nothing to do.");
-            session.getProvenanceReporter().send(f, context.getProperty(URI).getValue());
+            session.getProvenanceReporter().send(f, this.getURI(context));
             session.transfer(f, REL_SUCCESS_UNMODIFIED);
         }
     }
@@ -376,14 +377,14 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
         return queryAndUpdateDocs;
     }
 
-    protected BulkWriteResult performBlukUpdate(List<Map<String, Document>> updateDocs, ProcessContext context, ProcessSession session) {
+    protected BulkWriteResult performBulkUpdate(FlowFile f, List<Map<String, Document>> updateDocs, ProcessContext context, ProcessSession session) {
         final ComponentLog logger = getLogger();
         StopWatch watch = new StopWatch(true);
 
         logger.debug("Performing Bulk Update of [ " + updateDocs.size() + " ] documents");
 
         final WriteConcern writeConcern = getWriteConcern(context);
-        final MongoCollection<Document> collection = getCollection(context).withWriteConcern(writeConcern);
+        final MongoCollection<Document> collection = getCollection(context, f).withWriteConcern(writeConcern);
 
         List<WriteModel<Document>> updates = new ArrayList<>();
 
@@ -401,14 +402,14 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
 
     }
 
-    protected UpdateResult performSingleUpdate(Document query, Document updateDocument, ProcessContext context, ProcessSession session) {
+    protected UpdateResult performSingleUpdate(FlowFile f, Document query, Document updateDocument, ProcessContext context, ProcessSession session) {
         final ComponentLog logger = getLogger();
         StopWatch watch = new StopWatch(true);
 
         final String mode = context.getProperty(MODE).getValue();
 
         final WriteConcern writeConcern = getWriteConcern(context);
-        final MongoCollection<Document> collection = getCollection(context).withWriteConcern(writeConcern);
+        final MongoCollection<Document> collection = getCollection(context, f).withWriteConcern(writeConcern);
 
         UpdateResult result = null;
         if (!updateDocument.isEmpty()) {
@@ -440,9 +441,10 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
         Document query = queryAndUpdate.get("query");
         Document updateDocument = queryAndUpdate.get("update");
 
-        return performSingleUpdate(query, updateDocument, context, session);
+        return performSingleUpdate(flowFile, query, updateDocument, context, session);
     }
 
+    @Override
     protected WriteConcern getWriteConcern(final ProcessContext context) {
         final String writeConcernProperty = context.getProperty(WRITE_CONCERN).getValue();
         WriteConcern writeConcern = null;
@@ -450,17 +452,20 @@ public class PartialUpdateMongo extends AbstractMongoProcessor {
             case WRITE_CONCERN_ACKNOWLEDGED:
                 writeConcern = WriteConcern.ACKNOWLEDGED;
                 break;
+            case WRITE_CONCERN_W1:
+                writeConcern = WriteConcern.W1;
+                break;
+            case WRITE_CONCERN_W2:
+                writeConcern = WriteConcern.W2;
+                break;
+            case WRITE_CONCERN_W3:
+                writeConcern = WriteConcern.W3;
+                break;
             case WRITE_CONCERN_UNACKNOWLEDGED:
                 writeConcern = WriteConcern.UNACKNOWLEDGED;
                 break;
-            case WRITE_CONCERN_FSYNCED:
-                writeConcern = WriteConcern.FSYNCED;
-                break;
             case WRITE_CONCERN_JOURNALED:
                 writeConcern = WriteConcern.JOURNALED;
-                break;
-            case WRITE_CONCERN_REPLICA_ACKNOWLEDGED:
-                writeConcern = WriteConcern.REPLICA_ACKNOWLEDGED;
                 break;
             case WRITE_CONCERN_MAJORITY:
                 writeConcern = WriteConcern.MAJORITY;

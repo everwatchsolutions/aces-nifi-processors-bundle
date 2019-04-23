@@ -41,6 +41,7 @@ import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.io.StreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
+import org.apache.nifi.expression.ExpressionLanguageScope;
 
 /**
  *
@@ -123,7 +124,7 @@ public class ConvertSecurityMarkingAndAttrListIntoJson extends AbstractProcessor
             .description("Specifies the Converter settings to use for this flow")
             .required(true)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-            .expressionLanguageSupported(false)
+            .expressionLanguageSupported(ExpressionLanguageScope.NONE)
             .build();
 
     /**
@@ -136,7 +137,7 @@ public class ConvertSecurityMarkingAndAttrListIntoJson extends AbstractProcessor
                     + "is left empty then this will be invalid input.")
             .required(true)
             .addValidator(StandardValidators.createAttributeExpressionLanguageValidator(AttributeExpression.ResultType.STRING, true))
-            .expressionLanguageSupported(true)
+            .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
             .build();
 
     public static final Relationship REL_SUCCESS = new Relationship.Builder().name("success")
