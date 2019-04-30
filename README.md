@@ -30,5 +30,5 @@ mvn clean install
 You will then need to copy the `nar` file into you `nifi/lib` directory
 
 ```
-cp aces-nifi-nar/target/aces-nifi-nar-0.6.1.nar /path/to/nifi-0.6.1/lib/
+cp aces-nifi-nar/target/aces-nifi-nar-1.9.2.nar /path/to/nifi-1.9.2/lib/
 ```

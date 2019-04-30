@@ -31,24 +31,24 @@ import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.io.InputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
-import org.apache.nifi.processors.mongodb.AbstractMongoProcessor;
 import org.apache.nifi.stream.io.StreamUtils;
 import org.apache.nifi.util.StopWatch;
+import org.apache.nifi.processors.mongodb.AbstractMongoBridgeProcessor;
 import org.bson.Document;
 
 /**
- * This processor will do a simple Mongo insert, but it will actually handle
- * any error that is thrown when the id already exists.  This is useful if you
- * do something special when you try to insert an already existing record, like forward
- * it to another processor like our AddToArrayMongo processor. 
- * 
+ * This processor will do a simple Mongo insert, but it will actually handle any
+ * error that is thrown when the id already exists. This is useful if you do
+ * something special when you try to insert an already existing record, like
+ * forward it to another processor like our AddToArrayMongo processor.
+ *
  * @author andrewserff
  */
 @EventDriven
 @Tags({"mongodb", "insert", "update", "write", "put"})
 @InputRequirement(Requirement.INPUT_REQUIRED)
 @CapabilityDescription("Writes the contents of a FlowFile to MongoDB")
-public class PutMongoWithDuplicateCheck extends AbstractMongoProcessor {
+public class PutMongoWithDuplicateCheck extends AbstractMongoBridgeProcessor {
 
     public static final Relationship REL_SUCCESS = new Relationship.Builder().name("success")
             .description("All FlowFiles that are written to MongoDB are routed to this relationship").build();
@@ -57,19 +57,19 @@ public class PutMongoWithDuplicateCheck extends AbstractMongoProcessor {
     public static final Relationship REL_ALREADY_EXISTS = new Relationship.Builder().name("already-exists")
             .description("If the insert fails because the key already exists, the FlowFile will be routed to this relationship").build();
 
-    static final String WRITE_CONCERN_ACKNOWLEDGED = "ACKNOWLEDGED";
-    static final String WRITE_CONCERN_UNACKNOWLEDGED = "UNACKNOWLEDGED";
-    static final String WRITE_CONCERN_FSYNCED = "FSYNCED";
-    static final String WRITE_CONCERN_JOURNALED = "JOURNALED";
-    static final String WRITE_CONCERN_REPLICA_ACKNOWLEDGED = "REPLICA_ACKNOWLEDGED";
-    static final String WRITE_CONCERN_MAJORITY = "MAJORITY";
+    protected static final String WRITE_CONCERN_ACKNOWLEDGED = "ACKNOWLEDGED";
+    protected static final String WRITE_CONCERN_W1 = "W1";
+    protected static final String WRITE_CONCERN_W2 = "W2";
+    protected static final String WRITE_CONCERN_W3 = "W3";
+    protected static final String WRITE_CONCERN_UNACKNOWLEDGED = "UNACKNOWLEDGED";
+    protected static final String WRITE_CONCERN_JOURNALED = "JOURNALED";
+    protected static final String WRITE_CONCERN_MAJORITY = "MAJORITY";
 
     static final PropertyDescriptor WRITE_CONCERN = new PropertyDescriptor.Builder()
             .name("Write Concern")
             .description("The write concern to use")
             .required(true)
-            .allowableValues(WRITE_CONCERN_ACKNOWLEDGED, WRITE_CONCERN_UNACKNOWLEDGED, WRITE_CONCERN_FSYNCED, WRITE_CONCERN_JOURNALED,
-                    WRITE_CONCERN_REPLICA_ACKNOWLEDGED, WRITE_CONCERN_MAJORITY)
+            .allowableValues(WRITE_CONCERN_ACKNOWLEDGED, WRITE_CONCERN_W1, WRITE_CONCERN_W2, WRITE_CONCERN_W3, WRITE_CONCERN_UNACKNOWLEDGED, WRITE_CONCERN_JOURNALED, WRITE_CONCERN_MAJORITY)
             .defaultValue(WRITE_CONCERN_ACKNOWLEDGED)
             .build();
     static final PropertyDescriptor CHARACTER_SET = new PropertyDescriptor.Builder()
@@ -85,9 +85,10 @@ public class PutMongoWithDuplicateCheck extends AbstractMongoProcessor {
 
     static {
         List<PropertyDescriptor> _propertyDescriptors = new ArrayList<>();
-        _propertyDescriptors.add(URI);
-        _propertyDescriptors.add(DATABASE_NAME);
-        _propertyDescriptors.add(COLLECTION_NAME);
+        //NOTE: This processor did not originally support SSL and has not been tested w/ use of it. 
+        //We are now including the SSL CONTEXT SERVICE and the CLIENT AUTH NAME in this processor for now as that was the easiest thing to do for now.
+        //We could choose later to filter out these, but for now they are there.
+        _propertyDescriptors.addAll(propDescriptors);
         _propertyDescriptors.add(WRITE_CONCERN);
         _propertyDescriptors.add(CHARACTER_SET);
         propertyDescriptors = Collections.unmodifiableList(_propertyDescriptors);
@@ -122,7 +123,7 @@ public class PutMongoWithDuplicateCheck extends AbstractMongoProcessor {
         final Charset charset = Charset.forName(context.getProperty(CHARACTER_SET).getValue());
         final WriteConcern writeConcern = getWriteConcern(context);
 
-        final MongoCollection<Document> collection = getCollection(context).withWriteConcern(writeConcern);
+        final MongoCollection<Document> collection = getCollection(context, flowFile).withWriteConcern(writeConcern);
 
         try {
             // Read the contents of the FlowFile into a byte array
@@ -142,12 +143,12 @@ public class PutMongoWithDuplicateCheck extends AbstractMongoProcessor {
             insertWatch.stop();
             logger.info("inserted {} into MongoDB in {} ms", new Object[]{flowFile, insertWatch.getDuration(TimeUnit.MILLISECONDS)});
 
-            session.getProvenanceReporter().send(flowFile, context.getProperty(URI).getValue());
+            session.getProvenanceReporter().send(flowFile, this.getURI(context));
             session.transfer(flowFile, REL_SUCCESS);
         } catch (Exception e) {
             if (e instanceof MongoWriteException) {
                 if (e.getMessage().contains("duplicate key")) {
-                    session.getProvenanceReporter().send(flowFile, context.getProperty(URI).getValue());
+                    session.getProvenanceReporter().send(flowFile, this.getURI(context));
                     session.transfer(flowFile, REL_ALREADY_EXISTS);
                     context.yield();
                 }
@@ -162,6 +163,7 @@ public class PutMongoWithDuplicateCheck extends AbstractMongoProcessor {
         logger.info("PutMongo took: " + totalWatch.getDuration(TimeUnit.MILLISECONDS) + "ms");
     }
 
+    @Override
     protected WriteConcern getWriteConcern(final ProcessContext context) {
         final String writeConcernProperty = context.getProperty(WRITE_CONCERN).getValue();
         WriteConcern writeConcern = null;
@@ -169,17 +171,20 @@ public class PutMongoWithDuplicateCheck extends AbstractMongoProcessor {
             case WRITE_CONCERN_ACKNOWLEDGED:
                 writeConcern = WriteConcern.ACKNOWLEDGED;
                 break;
+            case WRITE_CONCERN_W1:
+                writeConcern = WriteConcern.W1;
+                break;
+            case WRITE_CONCERN_W2:
+                writeConcern = WriteConcern.W2;
+                break;
+            case WRITE_CONCERN_W3:
+                writeConcern = WriteConcern.W3;
+                break;
             case WRITE_CONCERN_UNACKNOWLEDGED:
                 writeConcern = WriteConcern.UNACKNOWLEDGED;
                 break;
-            case WRITE_CONCERN_FSYNCED:
-                writeConcern = WriteConcern.FSYNCED;
-                break;
             case WRITE_CONCERN_JOURNALED:
                 writeConcern = WriteConcern.JOURNALED;
-                break;
-            case WRITE_CONCERN_REPLICA_ACKNOWLEDGED:
-                writeConcern = WriteConcern.REPLICA_ACKNOWLEDGED;
                 break;
             case WRITE_CONCERN_MAJORITY:
                 writeConcern = WriteConcern.MAJORITY;
