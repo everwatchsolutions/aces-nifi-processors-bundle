@@ -46,6 +46,12 @@
             <artifactId>nifi-mongodb-client-service-api</artifactId>
             <scope>runtime</scope>
         </dependency>
+        <dependency>
+            <groupId>org.apache.nifi</groupId>
+            <artifactId>nifi-mongodb-services</artifactId>
+            <version>${nifi.version}</version>
+            <scope>runtime</scope>
+        </dependency>
     </dependencies>
 
 </project>
