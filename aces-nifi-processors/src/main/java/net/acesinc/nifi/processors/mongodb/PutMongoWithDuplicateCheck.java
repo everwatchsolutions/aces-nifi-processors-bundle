@@ -20,6 +20,8 @@ import java.util.concurrent.TimeUnit;
 import org.apache.nifi.annotation.behavior.EventDriven;
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.InputRequirement.Requirement;
+import org.apache.nifi.annotation.behavior.SystemResource;
+import org.apache.nifi.annotation.behavior.SystemResourceConsideration;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.components.PropertyDescriptor;
@@ -48,6 +50,7 @@ import org.bson.Document;
 @Tags({"mongodb", "insert", "update", "write", "put"})
 @InputRequirement(Requirement.INPUT_REQUIRED)
 @CapabilityDescription("Writes the contents of a FlowFile to MongoDB")
+@SystemResourceConsideration(resource = SystemResource.MEMORY)
 public class PutMongoWithDuplicateCheck extends AbstractMongoBridgeProcessor {
 
     public static final Relationship REL_SUCCESS = new Relationship.Builder().name("success")
