@@ -17,3 +17,4 @@ net.acesinc.nifi.processors.mongodb.PutMongoWithDuplicateCheck
 net.acesinc.nifi.processors.json.BetterAttributesToJSON
 net.acesinc.nifi.processors.security.ConvertSecurityMarkingAndAttrListIntoJson
 net.acesinc.nifi.processors.counter.DataBinningProcessor
+net.acesinc.nifi.processors.sockets.SocketIOProcessor
