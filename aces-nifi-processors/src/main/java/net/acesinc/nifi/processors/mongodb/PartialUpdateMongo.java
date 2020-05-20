@@ -5,6 +5,7 @@
  */
 package net.acesinc.nifi.processors.mongodb;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mongodb.WriteConcern;
 import com.mongodb.bulk.BulkWriteResult;
@@ -20,11 +21,13 @@ import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TimeZone;
 import java.util.concurrent.TimeUnit;
 import org.apache.nifi.annotation.behavior.EventDriven;
 import org.apache.nifi.annotation.behavior.InputRequirement;
@@ -80,6 +83,8 @@ public class PartialUpdateMongo extends AbstractMongoBridgeProcessor {
      * conjuction with $addToSet.
      */
     protected static final String OPERATION_EACH = "$each";
+    private static final String MONGO_TIME_ZONE = "GMT-0";
+    private static final String MONGO_DATE_TEMPLATE = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'";
 
     protected static final String WRITE_CONCERN_ACKNOWLEDGED = "ACKNOWLEDGED";
     protected static final String WRITE_CONCERN_W1 = "W1";
@@ -307,28 +312,49 @@ public class PartialUpdateMongo extends AbstractMongoBridgeProcessor {
 
                 if (OPERATION_CURRENT_DATE.equals(operation)) {
                     operationValues.append(p, true);
-                } else if (OPERATION_ADD_TO_SET.equals(operation) && doc.get(p) != null) {
-                    String jsonString = mapper.writeValueAsString(doc.get(p));
-                    //looking for an array to use $each mode
-                    if (jsonString.contains("[")) {
-                        List<Map<String, Object>> operationValueDocs = mapper.readValue(jsonString, List.class);
+                } else if (OPERATION_ADD_TO_SET.equals(operation) && (doc.get(p) != null || p.contains("."))) {
+                    if (!p.contains(".")) {
+                        String jsonString = mapper.writeValueAsString(doc.get(p));
+                        //looking for an array to use $each mode
+                        if (jsonString.contains("[{")) {
+                            //logic for when there is an array of objects in $addToSet-$each mode
+                            logger.debug("$addToSet-$each, array of Objects scenario detected: jsonString [ " + jsonString + " ].");
+                            List<Map<Object, Object>> operationValueDocs = mapper.readValue(jsonString, List.class);
+                            operationValueDocs = fixTimestampsInside(operationValueDocs);
 //                db.inventory.update(
 //                                   { _id: 2 },
 //                                   { $addToSet: { tags: { $each: [ "camera", "electronics", "accessories" ] } } }
 //                                   )
 
-                        Document eachDoc = new Document(OPERATION_EACH, operationValueDocs);
-                        operationValues.append(p, eachDoc);
-                    } else {
-                        Object origValue = doc.get(p);
-//                    logger.info("Adding update for property [ " + p + " ] with value [ " + origValue + " ]");
-                        if (origValue != null) {
-                            operationValues.append(p, doc.get(p));
+                            Document eachDoc = new Document(OPERATION_EACH, operationValueDocs);
+                            operationValues.append(p, eachDoc);
+                        } else if (jsonString.contains("[") && !jsonString.contains("{")) {
+                            //logic for when there is a regular array w/ items in $addToSet-$each mode
+                            List<Map<String, Object>> operationValueDocs = mapper.readValue(jsonString, List.class);
+//                db.inventory.update(
+//                                   { _id: 2 },
+//                                   { $addToSet: { tags: { $each: [ "camera", "electronics", "accessories" ] } } }
+//                                   )
+
+                            Document eachDoc = new Document(OPERATION_EACH, operationValueDocs);
+                            operationValues.append(p, eachDoc);
                         } else {
-                            //input document didn't have the specified key. skipping. 
-                            logger.debug("Input document did not have value for key [ " + p + " ]. Skipping");
+                            Object origValue = doc.get(p);
+//                    logger.info("Adding update for property [ " + p + " ] with value [ " + origValue + " ]");
+                            if (origValue != null) {
+                                operationValues.append(p, doc.get(p));
+                            } else {
+                                //input document didn't have the specified key. skipping. 
+                                logger.debug("Input document did not have value for key [ " + p + " ]. Skipping");
+                            }
                         }
+                    } else {
+                        //logic if there is a parent.child scenario for $addToSet each, when there are multiple properties listed w/ comma delmiting
+                        operationValues = buildDocumentForParentDotChilAddToSetArrayScenario(p, doc, operationValues, true);
                     }
+                } else if (OPERATION_SET.equals(operation) && p.contains(".")) {
+                    //logic for when $set is an object -- children -- parent.child situation
+                    operationValues = buildDocumentForParentDotChildSetScenario(p, doc, operationValues, true);
                 } else {
                     Object origValue = doc.get(p);
 //                    logger.info("Adding update for property [ " + p + " ] with value [ " + origValue + " ]");
@@ -353,23 +379,45 @@ public class PartialUpdateMongo extends AbstractMongoBridgeProcessor {
                 //prepare to check if this is an array first
                 operationValue = new Document(propertyName, true);
                 updateDocument.append(operation, operationValue);
-            } else if (OPERATION_ADD_TO_SET.equals(operation) && doc.get(propertyName) != null) {
-                String jsonString = mapper.writeValueAsString(doc.get(propertyName));
-                //looking for an array to use $each mode
-                if (jsonString.contains("[")) {
-                    List<Map<String, Object>> operationValueDocs = mapper.readValue(jsonString, List.class);
+            } else if (OPERATION_ADD_TO_SET.equals(operation) && (doc.get(propertyName) != null || propertyName.contains("."))) {
+                if (!propertyName.contains(".")) {
+                    String jsonString = mapper.writeValueAsString(doc.get(propertyName));
+                    //looking for an array to use $each mode
+                    if (jsonString.contains("[{")) {
+                        //logic for when there is an array of objects
+                        logger.debug("$addToSet-$each, array of Objects scenario detected: jsonString [ " + jsonString + " ].");
+                        List<Map<Object, Object>> operationValueDocs = mapper.readValue(jsonString, List.class);
+                        operationValueDocs = this.fixTimestampsInside(operationValueDocs);
 //                db.inventory.update(
 //                                   { _id: 2 },
 //                                   { $addToSet: { tags: { $each: [ "camera", "electronics", "accessories" ] } } }
 //                                   )
 
-                    Document eachDoc = new Document(OPERATION_EACH, operationValueDocs);
-                    Document arrayDoc = new Document(propertyName, eachDoc);
-                    updateDocument.append(operation, arrayDoc);
+                        Document eachDoc = new Document(OPERATION_EACH, operationValueDocs);
+                        Document arrayDoc = new Document(propertyName, eachDoc);
+                        updateDocument.append(operation, arrayDoc);
+                    } else if (jsonString.contains("[") && !jsonString.contains("{")) {
+                        //logic for when there is a regular array w/ items
+                        List<Map<String, Object>> operationValueDocs = mapper.readValue(jsonString, List.class);
+//                db.inventory.update(
+//                                   { _id: 2 },
+//                                   { $addToSet: { tags: { $each: [ "camera", "electronics", "accessories" ] } } }
+//                                   )
+
+                        Document eachDoc = new Document(OPERATION_EACH, operationValueDocs);
+                        Document arrayDoc = new Document(propertyName, eachDoc);
+                        updateDocument.append(operation, arrayDoc);
+                    } else {
+                        operationValue = new Document(propertyName, doc.get(propertyName));
+                        updateDocument.append(operation, operationValue);
+                    }
                 } else {
-                    operationValue = new Document(propertyName, doc.get(propertyName));
-                    updateDocument.append(operation, operationValue);
+                    //addToSet when there is one individual propertyName listed and there is 
+                    updateDocument = buildDocumentForParentDotChilAddToSetArrayScenario(propertyName, doc, updateDocument, false);
                 }
+            } else if (OPERATION_SET.equals(operation) && propertyName.contains(".")) {
+                //logic on when $set handles an object -- children -- parent.child item specified
+                updateDocument = buildDocumentForParentDotChildSetScenario(propertyName, doc, updateDocument, false);
             } else {
                 operationValue = new Document(propertyName, doc.get(propertyName));
                 updateDocument.append(operation, operationValue);
@@ -477,6 +525,212 @@ public class PartialUpdateMongo extends AbstractMongoBridgeProcessor {
                 writeConcern = WriteConcern.ACKNOWLEDGED;
         }
         return writeConcern;
+    }
+
+    /**
+     * Parses parent.child notation property names that represent a child-key
+     * beneath a parent-key in json.
+     *
+     * @param parentDotChildPropertyName
+     * @return
+     */
+    private String[] parseParentChild(String parentDotChildPropertyName) {
+        String[] tmps = parentDotChildPropertyName.split("\\.");
+        if (tmps.length != 2) {
+            throw new IllegalStateException("IllegalState thrown during use of a parent.child scenario: Use of '.' denotes parent child relationship and is allowed one child dimension in this processor. propertyName [" + parentDotChildPropertyName + "], length [" + tmps.length + "]");
+        }
+        return tmps;
+    }
+
+    /**
+     * Used to help build Document for Parent.child $set scenario
+     *
+     * @param propertyName
+     * @param doc
+     * @param updateDocument
+     * @param isMultiplePropertiesUsed used to designate whether multiple
+     * properties are being used w/ comma delimits or not as this does affect
+     * logic behavior
+     * @return
+     * @throws JsonProcessingException
+     * @throws IOException
+     */
+    private Document buildDocumentForParentDotChildSetScenario(String propertyName, Document doc, Document updateDocument, boolean isMultiplePropertiesUsed) throws JsonProcessingException, IOException {
+        final ComponentLog logger = getLogger();
+        String[] tmps = parseParentChild(propertyName);
+        String parentPropertyName = tmps[0];
+        String childPropertyName = tmps[1];
+        if (doc.get(parentPropertyName) != null && mapper.writeValueAsString(doc.get(parentPropertyName)).contains("{")) {
+            String jsonString = mapper.writeValueAsString(doc.get(parentPropertyName));
+            if (isMultiplePropertiesUsed) {
+                logger.debug("multiple propertyName scenario w/ parent.child notation: $set, p,propertyName:=" + propertyName);
+                logger.debug("multiple propertyName scenario w/ parent.child notation: $set, jsonString:=" + jsonString);
+            } else {
+                logger.debug("single propertyName scenario w/ parent.child notation: $set, propertyName [" + propertyName + "], parentPropertyName [" + parentPropertyName + "], childPropertyName [" + childPropertyName + "]");
+                logger.debug("single propertyName scenario w/ parent.child notation: $set, jsonString:=" + jsonString);
+            }
+            Map<String, Object> operationValueDocs = mapper.readValue(jsonString, Map.class);
+            operationValueDocs = this.fixChildOfParentForOpSet(parentPropertyName, childPropertyName, operationValueDocs);
+            if (!operationValueDocs.isEmpty()) {
+                if (isMultiplePropertiesUsed) {
+                    updateDocument.putAll(operationValueDocs);
+                } else {
+                    updateDocument.append(OPERATION_SET, operationValueDocs);
+                }
+            } else {
+                if (isMultiplePropertiesUsed) {
+                    logger.error("Empty document returned when attempting $set w/ parent.child on multiple propertyName scenario. Scenario: $set, propertyName [" + propertyName + "], parentPropertyName [" + parentPropertyName + "], childPropertyName [" + childPropertyName + "]");
+                } else {
+                    logger.error("Empty document returned when attempting $set w/ parent.child w/ single propertyName scenario. Scenario: $set, propertyName [" + propertyName + "], parentPropertyName [" + parentPropertyName + "], childPropertyName [" + childPropertyName + "]");
+                }
+            }
+        }
+        return updateDocument;
+    }
+
+    /**
+     * Used to help build Document for Parent.child $addToSet-$each scenario
+     *
+     * @param propertyName
+     * @param doc
+     * @param updateDocument
+     * @param isMultiplePropertiesUsed used to designate whether multiple
+     * properties are being used w/ comma delimits or not as this does affect
+     * logic behavior
+     * @return
+     * @throws JsonProcessingException
+     * @throws IOException
+     */
+    private Document buildDocumentForParentDotChilAddToSetArrayScenario(String propertyName, Document doc, Document updateDocument, boolean isMultiplePropertiesUsed) throws JsonProcessingException, IOException {
+        final ComponentLog logger = getLogger();
+        String[] tmps = parseParentChild(propertyName);
+        String parentPropertyName = tmps[0];
+        String childPropertyName = tmps[1];
+        if (doc.get(parentPropertyName) != null && mapper.writeValueAsString(doc.get(parentPropertyName)).contains("{") && mapper.writeValueAsString(doc.get(parentPropertyName)).contains("[")) {
+            //logic on when $addToSet handles an object and has at least one key-child array
+            String jsonString = mapper.writeValueAsString(doc.get(parentPropertyName));
+            if (isMultiplePropertiesUsed) {
+                logger.debug("multiple propertyName scenario w/ parent.child notation: $addToSet, propertyName[" + propertyName + "], parentPropertyName [" + parentPropertyName + "], childPropertyName [" + childPropertyName + "]");
+                logger.debug("multiple propertyName scenario w/ parent.child notation: $addToSet, jsonString:=" + jsonString);
+            } else {
+                logger.debug("single propertyName scenario w/ parent.child notation: $addToSet, propertyName [" + propertyName + "], parentPropertyName [" + parentPropertyName + "], childPropertyName [" + childPropertyName + "]");
+                logger.debug("single propertyName scenario w/ parent.child notation: $addToSet, jsonString:=" + jsonString);
+            }
+            Map<String, Object> operationValueDocs = mapper.readValue(jsonString, Map.class);
+            Document parentDoc = this.fixChildOfParentForOpAddToSetEachArray(parentPropertyName, childPropertyName, operationValueDocs);
+            if (!parentDoc.isEmpty()) {
+                if (isMultiplePropertiesUsed) {
+                    updateDocument.putAll(parentDoc);
+                } else {
+                    updateDocument.append(OPERATION_ADD_TO_SET, parentDoc);
+                }
+            } else {
+                if (isMultiplePropertiesUsed) {
+                    logger.error("Empty document returned when attempting $addToSet-$each w/ parent.child w/ multiple propertyNames scenario. Scenario: $addToSet, propertyName [" + propertyName + "], parentPropertyName [" + parentPropertyName + "], childPropertyName [" + childPropertyName + "]");
+                } else {
+                    logger.error("Empty document returned when attempting $addToSet-$each w/ parent.child w/ single propertyName scenario. Scenario: $addToSet, propertyName [" + propertyName + "], parentPropertyName [" + parentPropertyName + "], childPropertyName [" + childPropertyName + "]");
+                }
+            }
+        }
+        return updateDocument;
+    }
+
+    /**
+     * This is the technique for updating a date field within an object where
+     * the object is inside an array. Using the $date technique w/ more nesting
+     * like this did not work at all and was rejected.
+     *
+     * @param opsValueDocs
+     * @return
+     */
+    private List<Map<Object, Object>> fixTimestampsInside(List<Map<Object, Object>> opsValueDocs) {
+        final ComponentLog logger = getLogger();
+        for (int i = 0; i < opsValueDocs.size(); i++) {
+            Map<Object, Object> item = opsValueDocs.get(i);
+            Set<Object> keySet = item.keySet();
+            Object[] keys = (Object[]) keySet.toArray();
+            for (Object key : keys) {
+                if (key instanceof String) {
+                    logger.debug("$addToSet, adding object scenario that has date child, Key-string: [" + key + "]");
+                    String keyStr = (String) key;
+                    if (keyStr.toLowerCase().contains("time")) {
+                        logger.debug("$addToSet, adding object scenario that has date child, timefield name to update Long w/ ISODate is [" + keyStr + "]");
+                        //value must be Long based on obseration, so skip instanceof
+                        Long timeVal = (Long) item.get(key);
+                        GregorianCalendar gcal = new GregorianCalendar();
+                        gcal.setTimeZone(TimeZone.getTimeZone(MONGO_TIME_ZONE));
+                        gcal.setTimeInMillis(timeVal);
+                        item.put(key, gcal.getTime());
+                        opsValueDocs.set(i, item);
+                    }
+                } else {
+                    logger.warn("$addToSet, adding object scenario that has date child, Key-unexpected-obj: [" + key + "]; Class [" + key.getClass().toString() + "]");
+                }
+            }
+        }
+        return opsValueDocs;
+    }
+
+    /**
+     * This helps w/ using $set when there is a parent.child propertyName
+     * specified
+     *
+     * @param parentPropertyName
+     * @param childPropertyName
+     * @param opsValueDocs
+     * @return
+     */
+    private Map<String, Object> fixChildOfParentForOpSet(String parentPropertyName, String childPropertyName, Map<String, Object> opsValueDocs) {
+        Map<String, Object> parentMap = new HashMap<>();
+        final ComponentLog logger = getLogger();
+        if (opsValueDocs instanceof Map) {
+            if (opsValueDocs.containsKey(childPropertyName)) {
+                String tmp = parentPropertyName + "." + childPropertyName;
+                parentMap.put(tmp, opsValueDocs.get(childPropertyName));
+                return parentMap;
+            } else {
+                logger.error("$set, parent.child scenario: Anticipated child-key was NOT found. child-Key: [" + childPropertyName + "], parentPropertyName [" + parentPropertyName + "]");
+            }
+        } else {
+            logger.error("$set, parent.child scenario: This converted item is not an instance of Map. The class is [" + opsValueDocs.getClass().toString() + "]");
+        }
+        //otherwise, just return an empty map
+        return parentMap;
+    }
+
+    /**
+     * This helps w/ $addToSet-$each when there is a parent.child propertyName
+     * specified and the child item is an array holding child-key
+     *
+     * @param parentPropertyName
+     * @param childPropertyName
+     * @param opsValueDocs
+     * @return
+     */
+    private Document fixChildOfParentForOpAddToSetEachArray(String parentPropertyName, String childPropertyName, Map<String, Object> opsValueDocs) {
+        final ComponentLog logger = getLogger();
+        //db.inventory.update(
+        //  { _id: 2 },
+        //  { $addToSet: { stuff.tags: { $each: [ "camera", "electronics", "accessories" ] } } }
+        //)
+        Document emptyDocument = new Document();
+        if (opsValueDocs instanceof Map) {
+            if (opsValueDocs.containsKey(childPropertyName) && (opsValueDocs.get(childPropertyName) instanceof List)) {
+                //for (String key : keys) {
+                String tmp = parentPropertyName + "." + childPropertyName;
+                //if (opsValueDocs.get(childPropertyName) instanceof List) {
+                Document eachDoc = new Document(OPERATION_EACH, opsValueDocs.get(childPropertyName));
+                Document arrayDoc = new Document(tmp, eachDoc);
+                return arrayDoc;
+            } else {
+                logger.warn("$addToSet-$each, parent.child scenario for array child: Skipping key-value pair out of map: Key either doesn't exist or Value related to key is not of type List.");
+            }
+
+        } else {
+            logger.warn("$addToSet-$each, parent.child scenario for array child: This converted item is not an instance of Map. The class is [" + opsValueDocs.getClass().toString() + "]. Investigate further. The Java deserialization from ObjectMapper likely needs to be modified on the data being passed here in the scenario being attempted.");
+        }
+        //otherwise, just return what we were given
+        return emptyDocument;
     }
 
 }
