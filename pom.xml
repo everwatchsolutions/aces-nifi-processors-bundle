@@ -29,7 +29,7 @@
 
     <properties>
         <nifi.version>1.9.2</nifi.version>
-        <mongo.version>3.4.3</mongo.version>
+        <mongo.version>3.6.0</mongo.version>
         <!-- This is the same version of Jackson that the 1.9.2 processors use. -->
         <jackson.version>2.9.7</jackson.version>
         <owasp.dependency.check.plugin.version>4.0.2</owasp.dependency.check.plugin.version>
