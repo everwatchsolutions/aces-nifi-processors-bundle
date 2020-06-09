@@ -29,7 +29,8 @@
 
     <properties>
         <nifi.version>1.9.2</nifi.version>
-        <mongo.version>3.6.0</mongo.version>
+        <!-- WARNING: When upgrading past this version and w/ next version of nifi (past 1.9.2), please attempt using new mongodb-driver-sync. However, this will require past Java 8.-->
+        <mongo.version>3.12.5</mongo.version>
         <!-- This is the same version of Jackson that the 1.9.2 processors use. -->
         <jackson.version>2.9.7</jackson.version>
         <owasp.dependency.check.plugin.version>4.0.2</owasp.dependency.check.plugin.version>
