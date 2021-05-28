@@ -25,32 +25,26 @@
     <artifactId>aces-nifi-processors</artifactId>
     <packaging>jar</packaging>
 
+
     <dependencies>
-        <dependency>
-            <groupId>net.acesinc.data</groupId>
-            <artifactId>data-binner</artifactId>
-            <version>1.0.7</version>
-        </dependency>
         <dependency>
             <groupId>org.apache.nifi</groupId>
             <artifactId>nifi-mongodb-processors</artifactId>
             <version>${nifi.version}</version>
             <scope>provided</scope>
         </dependency>
-        <!-- BEGIN WARNING!!! -->
         <dependency>
             <groupId>org.mongodb</groupId>
-            <!-- WARNING: When upgrading past this version and w/ next version of nifi (past 1.9.2), please attempt using new mongodb-driver-sync. However, this will require past Java 8.-->
-            <artifactId>mongodb-driver-legacy</artifactId>
+            <artifactId>mongodb-driver-sync</artifactId>
             <version>${mongo.version}</version>
             <scope>provided</scope>
         </dependency>
-        <!-- END WARNING -->
         <dependency>
             <groupId>org.apache.nifi</groupId>
             <artifactId>nifi-api</artifactId>
             <scope>provided</scope>
         </dependency>
+        
         <dependency>
             <groupId>org.apache.nifi</groupId>
             <artifactId>nifi-processor-utils</artifactId>
@@ -75,6 +69,17 @@
             <version>${jackson.version}</version>
         </dependency>
         <dependency>
+            <groupId>io.socket</groupId>
+            <artifactId>socket.io-client</artifactId>
+            <version>0.8.3</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+            <version>3.9</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-simple</artifactId>
             <scope>test</scope>
@@ -84,10 +89,8 @@
             <artifactId>junit</artifactId>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>io.socket</groupId>
-            <artifactId>socket.io-client</artifactId>
-            <version>0.8.3</version>
-        </dependency>
     </dependencies>
+    
+
+    
 </project>
