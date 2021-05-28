@@ -19,7 +19,7 @@
     <parent>
         <groupId>org.apache.nifi</groupId>
         <artifactId>nifi-nar-bundles</artifactId>
-        <version>1.9.2</version>
+        <version>1.13.2</version>
     </parent>
 
     <groupId>net.acesinc.nifi</groupId>
@@ -28,13 +28,63 @@
     <packaging>pom</packaging>
 
     <properties>
-        <nifi.version>1.9.2</nifi.version>
+        <nifi.version>1.13.2</nifi.version>
         <!-- WARNING: When upgrading past this version and w/ next version of nifi (past 1.9.2), please attempt using new mongodb-driver-sync. However, this will require past Java 8.-->
-        <mongo.version>3.12.5</mongo.version>
+        <mongo.version>4.2.3</mongo.version>
         <!-- This is the same version of Jackson that the 1.9.2 processors use. -->
-        <jackson.version>2.9.7</jackson.version>
-        <owasp.dependency.check.plugin.version>4.0.2</owasp.dependency.check.plugin.version>
+        <jackson.version>2.12.3</jackson.version>
+        <owasp.dependency.check.plugin.version>6.1.6</owasp.dependency.check.plugin.version>
+        <java.version>11</java.version>
+        <maven.compiler.release>${java.version}</maven.compiler.release>
+        <mvn.version>3.8.1</mvn.version>
+<!--        <groovy.all.version>2.5.6</groovy.all.version>
+        <groovy.eclipse.batch.version>2.5.14-02</groovy.eclipse.batch.version>-->
     </properties>
+    
+    <pluginRepositories>
+        <pluginRepository>
+            <id>gcs-maven-central-mirror</id>
+            <!--
+            
+                          Google Mirror of Maven Central, placed first so that it's used instead of flaky Maven Central.
+                          See https://storage-download.googleapis.com/maven-central/index.html
+                        
+            -->
+            <name>GCS Maven Central mirror</name>
+            <url>
+                https://maven-central.storage-download.googleapis.com/repos/central/data/
+            </url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </pluginRepository>
+        <pluginRepository>
+            <id>central</id>
+            <name>Central Repository</name>
+            <url>https://repo.maven.apache.org/maven2</url>
+            <layout>default</layout>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+            <releases>
+                <updatePolicy>never</updatePolicy>
+            </releases>
+        </pluginRepository>
+        <pluginRepository>
+            <id>bintray</id>
+            <name>Groovy Bintray</name>
+            <url>https://dl.bintray.com/groovy/maven</url>
+            <releases>
+                <updatePolicy>never</updatePolicy>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </pluginRepository>
+    </pluginRepositories>
     
     <modules>
         <module>aces-nifi-processors</module>
@@ -54,6 +104,7 @@
     <build>
         <pluginManagement>
             <plugins>
+    
                 <plugin>
                     <groupId>org.owasp</groupId>
                     <artifactId>dependency-check-maven</artifactId>
@@ -63,6 +114,81 @@
                             <goals>
                                 <goal>check</goal>
                             </goals>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>${mvn.version}</version>
+                    <configuration>
+                        <release>${java.version}</release>
+                    </configuration>
+<!--                    <dependencies>
+                        <dependency>
+                            <groupId>org.codehaus.groovy</groupId>
+                            <artifactId>groovy-eclipse-compiler</artifactId>
+                            <version>3.7.0</version>
+                        </dependency>
+                        <dependency>
+                            <groupId>org.codehaus.groovy</groupId>
+                            <artifactId>groovy-eclipse-batch</artifactId>
+                            <version>${groovy.eclipse.batch.version}</version>
+                        </dependency>
+                        <dependency>
+                            <groupId>org.codehaus.groovy</groupId>
+                            <artifactId>groovy-all</artifactId>
+                            <version>${groovy.all.version}</version>
+                            <type>pom</type>
+                        </dependency>
+                    </dependencies>-->
+                </plugin>
+<!--                <plugin>
+                    <groupId>org.codehaus.groovy</groupId>
+                    <artifactId>groovy-eclipse-batch</artifactId>
+                    <version>${groovy.eclipse.batch.version}</version>
+                </plugin>-->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-enforcer-plugin</artifactId>
+                    <version>3.0.0-M3</version>
+                    <executions>
+                        <execution>
+                        <id>enforce-no-snapshots</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireReleaseDeps>
+                                    <message>Other than net.acesinc.nifi components themselves no snapshot dependencies are allowed</message>
+                                    <onlyWhenRelease>true</onlyWhenRelease>
+                                    <excludes>
+                                        <exclude>net.acesinc.nifi:*</exclude>
+                                    </excludes>
+                                </requireReleaseDeps>
+                            </rules>
+                            <!-- NOTE:Unable to avoid failure here due to the apache nifi master pom. You either have to add an exclusion of our package name or pass in
+                                 the skip related command flag for skipping enforcement altogether. -->
+                            <fail>false</fail>
+                        </configuration>
+                    </execution>
+                        <execution>
+                            <id>enforce-banned-dependencies</id>
+                            <goals>
+                                <goal>display-info</goal>
+                            </goals>
+                            <configuration>
+                                <rules>
+                                    <bannedDependencies>
+                                        <includes>
+                                            <include>org.json:json:jar:20210307</include>
+                                        </includes>
+                                        <searchTransitive>false</searchTransitive>
+                                    </bannedDependencies>
+                                </rules>
+                                <fail>true</fail>
+                            </configuration>
                         </execution>
                     </executions>
                 </plugin>
@@ -89,5 +215,7 @@
             </plugin>
         </plugins>
     </reporting>
+    
+    
 
 </project>
