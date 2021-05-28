@@ -8,7 +8,6 @@ import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.ssl.SSLContextService;
 
 import org.apache.nifi.expression.ExpressionLanguageScope;
-import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.logging.ComponentLog;
 import io.socket.client.Socket;
 import io.socket.client.IO;
