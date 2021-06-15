@@ -27,10 +27,11 @@ Clone this repository and then:
 git clone git@github.com:acesinc/aces-nifi-processors-bundle
 cd aces-nifi-processors-bundle
 mvn clean install
+mvn clean install -Denforcer.skip=true  (If this is a snapshot release)
 ```
 
 You will then need to copy the `nar` file into you `nifi/lib` directory
 
 ```
-cp aces-nifi-nar/target/aces-nifi-nar-1.9.2.nar /path/to/nifi-1.9.2/lib/
+cp aces-nifi-nar/target/aces-nifi-nar-1.13.2.nar /path/to/nifi-1.13.2/lib/
 ```
