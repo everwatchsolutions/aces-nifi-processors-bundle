@@ -19,7 +19,7 @@
     <parent>
         <groupId>org.apache.nifi</groupId>
         <artifactId>nifi-nar-bundles</artifactId>
-        <version>1.13.2</version>
+        <version>1.15.3</version>
     </parent>
 
     <groupId>net.acesinc.nifi</groupId>
@@ -28,11 +28,11 @@
     <packaging>pom</packaging>
 
     <properties>
-        <nifi.version>1.13.2</nifi.version>
+        <nifi.version>1.15.3</nifi.version>
         <!-- WARNING: When upgrading past this version and w/ next version of nifi and Java 11, please attempt using new mongodb-driver-sync. However, this will require past Java 8. Until you switch to Java 11, mongo.version 3.12.5 seems to be the main version to use. -->
-        <mongo.version>3.12.5</mongo.version>
-        <!-- This is the same version of Jackson that the 1.9.2 processors use. -->
-        <jackson.version>2.9.7</jackson.version>
+        <mongo.version>4.3.2</mongo.version>
+        <!-- This is the same version of Jackson that the 1.15.3 processors use. -->
+        <jackson.version>2.12.5</jackson.version>
         <owasp.dependency.check.plugin.version>4.0.2</owasp.dependency.check.plugin.version>
     </properties>
     
