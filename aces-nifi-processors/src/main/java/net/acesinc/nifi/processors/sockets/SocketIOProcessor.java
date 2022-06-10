@@ -4,6 +4,7 @@
 package net.acesinc.nifi.processors.sockets;
 
 import io.socket.emitter.Emitter;
+import okhttp3.OkHttpClient;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.ssl.SSLContextService;
 
@@ -15,7 +16,6 @@ import io.socket.client.IO;
 
 import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.components.PropertyDescriptor;
-import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
@@ -35,6 +35,7 @@ import java.io.ByteArrayOutputStream;
 import java.util.concurrent.TimeUnit;
 import java.net.URISyntaxException;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.X509TrustManager;
 import java.util.Collections;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -194,15 +195,25 @@ public class SocketIOProcessor extends AbstractProcessor{
         //Try to create the socket is the URI is valid
         try {
             URI uri = new URI(url);
-            socket.set(createSocket(uri, opts));
 
             //If the scheme is HTTPS then create an SSLContext.
             if (uri.getScheme().equalsIgnoreCase(SCHEME_TYPE_HTTPS)) {
                 SSLContextService sslContextService = context.getProperty(SSL_CONTEXT_SERVICE).asControllerService(SSLContextService.class);
-                sslCon = sslContextService.createSSLContext(SSLContextService.ClientAuth.NONE);
-                opts.sslContext = sslCon;
+                sslCon = sslContextService.createContext();
+                X509TrustManager trustMan = sslContextService.createTrustManager();
+                OkHttpClient httpClient = new OkHttpClient().newBuilder().sslSocketFactory(sslCon.getSocketFactory(),
+                        trustMan).build();
+
                 opts.secure = true;
-                IO.setDefaultSSLContext(sslCon);
+                opts.callFactory = httpClient;
+                opts.webSocketFactory = httpClient;
+                IO.setDefaultOkHttpCallFactory(httpClient);
+                IO.setDefaultOkHttpWebSocketFactory(httpClient);
+
+                socket.set(createSocket(uri, opts));
+
+            } else {
+                socket.set(createSocket(uri, opts));
             }
             socket.get().connect();
         }
@@ -217,6 +228,7 @@ public class SocketIOProcessor extends AbstractProcessor{
                 while (!socket.get().connected()) {
                     if (connectionTimeout < timer.getElapsed(TimeUnit.SECONDS)) {
                         logger.warn("Socket failed to connect to " + url + " after " + connectionTimeout + " seconds.");
+
                         break;
                     }
                     TimeUnit.MILLISECONDS.sleep(100);
@@ -321,18 +333,13 @@ public class SocketIOProcessor extends AbstractProcessor{
                 logger.debug("Socket " + uri.toString() + " disconnected...");
             }
             //Socket event for reconnection attempts.
-        }).on(Socket.EVENT_RECONNECT_ATTEMPT, new Emitter.Listener() {
+        }).on(Socket.EVENT_CONNECT_ERROR, new Emitter.Listener() {
             @Override
             public void call(Object... objects) {
-                logger.debug("Socket " + uri.toString() + " attempting reconnection...");
+                logger.debug("SocketIO Connect Error");
             }
-            //Socket event for connecting to the SocketIO server
-        }).on(Socket.EVENT_CONNECTING, new Emitter.Listener() {
-            @Override
-            public void call(Object... objects) {
-                logger.debug("Socket " + uri.toString() + " connecting...");
-            }
-        });
+        })
+        ;
         return _socket;
     }
 }
