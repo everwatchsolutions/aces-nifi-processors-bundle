@@ -33,5 +33,5 @@ mvn clean install -Denforcer.skip=true  (If this is a snapshot release)
 You will then need to copy the `nar` file into you `nifi/lib` directory
 
 ```
-cp aces-nifi-nar/target/aces-nifi-nar-1.13.2.nar /path/to/nifi-1.13.2/lib/
+cp aces-nifi-nar/target/aces-nifi-nar-1.22.0.nar /path/to/nifi-1.22.0/lib/
 ```
