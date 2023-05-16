@@ -140,25 +140,6 @@
                                 <fail>false</fail>
                             </configuration>
                         </execution>
-<!--                        <execution>
-                            <id>enforce-banned-dependencies</id>
-                            <goals>
-                                <goal>display-info</goal>
-                            </goals>
-                            <configuration>
-                                <rules>
-                                    <bannedDependencies>
-                                        <excludes>org.json:json</excludes>
-                                        <includes>
-                                             NOTE: this is caused by the socket-io dependency. The socket-io version needs to be updated, so this could have the chance of going away. 
-                                            <include>org.json:json:jar:20230227</include>
-                                        </includes>
-                                        <searchTransitive>false</searchTransitive>
-                                    </bannedDependencies>
-                                </rules>
-                                <fail>true</fail>
-                            </configuration>
-                        </execution>-->
                     </executions>
                 </plugin>
             </plugins>
