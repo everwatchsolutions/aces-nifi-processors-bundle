@@ -29,7 +29,7 @@
         <dependency>
             <groupId>net.acesinc.data</groupId>
             <artifactId>data-binner</artifactId>
-            <version>1.0.7</version>
+            <version>1.0.9-SNAPSHOT</version>
         </dependency>
         <dependency>
             <groupId>org.apache.nifi</groupId>
@@ -53,12 +53,6 @@
         </dependency>
         <dependency>
             <groupId>org.apache.nifi</groupId>
-            <artifactId>nifi-processor-utils</artifactId>
-            <version>${nifi.version}</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.nifi</groupId>
             <artifactId>nifi-standard-services-api-nar</artifactId>
             <version>${nifi.version}</version>
             <type>nar</type>
@@ -75,6 +69,12 @@
             <version>${jackson.version}</version>
         </dependency>
         <dependency>
+            <groupId>io.socket</groupId>
+            <artifactId>socket.io-client</artifactId>
+            <version>2.0.1</version>
+        </dependency>
+        
+        <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-simple</artifactId>
             <scope>test</scope>
@@ -83,11 +83,6 @@
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
             <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.socket</groupId>
-            <artifactId>socket.io-client</artifactId>
-            <version>2.0.1</version>
         </dependency>
     </dependencies>
 </project>

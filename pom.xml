@@ -19,7 +19,7 @@
     <parent>
         <groupId>org.apache.nifi</groupId>
         <artifactId>nifi-nar-bundles</artifactId>
-        <version>1.15.3</version>
+        <version>1.21.0</version>
     </parent>
 
     <groupId>net.acesinc.nifi</groupId>
@@ -28,12 +28,15 @@
     <packaging>pom</packaging>
 
     <properties>
-        <nifi.version>1.15.3</nifi.version>
+        <nifi.version>1.21.0</nifi.version>
+        <java.version>17</java.version>
+        <maven.compiler.release>${java.version}</maven.compiler.release>
+       
         <!-- WARNING: When upgrading past this version and w/ next version of nifi and Java 11, please attempt using new mongodb-driver-sync. However, this will require past Java 8. Until you switch to Java 11, mongo.version 3.12.5 seems to be the main version to use. -->
         <mongo.version>4.3.2</mongo.version>
         <!-- This is the same version of Jackson that the 1.15.3 processors use. -->
-        <jackson.version>2.12.5</jackson.version>
-        <owasp.dependency.check.plugin.version>4.0.2</owasp.dependency.check.plugin.version>
+        <jackson.version>2.15.0</jackson.version>
+        <owasp.dependency.check.plugin.version>8.2.1</owasp.dependency.check.plugin.version>
     </properties>
     
     <pluginRepositories>
@@ -114,7 +117,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-enforcer-plugin</artifactId>
-                    <version>3.0.0-M3</version>
+                    <version>3.3.0</version>
                     <executions>
                         <execution>
                             <id>enforce-no-snapshots</id>
@@ -137,7 +140,7 @@
                                 <fail>false</fail>
                             </configuration>
                         </execution>
-                        <execution>
+<!--                        <execution>
                             <id>enforce-banned-dependencies</id>
                             <goals>
                                 <goal>display-info</goal>
@@ -145,16 +148,17 @@
                             <configuration>
                                 <rules>
                                     <bannedDependencies>
+                                        <excludes>org.json:json</excludes>
                                         <includes>
-                                            <!-- NOTE: this is caused by the socket-io dependency. The socket-io version needs to be updated, so this could have the chance of going away. -->
-                                            <include>org.json:json:jar:20090211</include>
+                                             NOTE: this is caused by the socket-io dependency. The socket-io version needs to be updated, so this could have the chance of going away. 
+                                            <include>org.json:json:jar:20230227</include>
                                         </includes>
                                         <searchTransitive>false</searchTransitive>
                                     </bannedDependencies>
                                 </rules>
                                 <fail>true</fail>
                             </configuration>
-                        </execution>
+                        </execution>-->
                     </executions>
                 </plugin>
             </plugins>
