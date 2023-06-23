@@ -33,7 +33,7 @@
         <maven.compiler.release>${java.version}</maven.compiler.release>
        
         <!-- WARNING: When upgrading past this version and w/ next version of nifi and Java 11, please attempt using new mongodb-driver-sync. However, this will require past Java 8. Until you switch to Java 11, mongo.version 3.12.5 seems to be the main version to use. -->
-        <mongo.version>4.3.2</mongo.version>
+        <mongo.version>4.9.1</mongo.version>
         <!-- This is the same version of Jackson that the 1.15.3 processors use. -->
         <jackson.version>2.15.0</jackson.version>
         <owasp.dependency.check.plugin.version>8.2.1</owasp.dependency.check.plugin.version>
