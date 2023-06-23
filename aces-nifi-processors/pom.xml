@@ -41,7 +41,7 @@
         <dependency>
             <groupId>org.mongodb</groupId>
             <!-- WARNING: When upgrading past this version and w/ next version of nifi (past 1.9.2), please attempt using new mongodb-driver-sync. However, this will require past Java 8.-->
-            <artifactId>mongodb-driver-legacy</artifactId>
+            <artifactId>mongodb-driver-sync</artifactId>
             <version>${mongo.version}</version>
             <scope>provided</scope>
         </dependency>
