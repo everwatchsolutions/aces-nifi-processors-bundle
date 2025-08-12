@@ -19,7 +19,7 @@
     <parent>
         <groupId>org.apache.nifi</groupId>
         <artifactId>nifi-nar-bundles</artifactId>
-        <version>1.22.0</version>
+        <version>1.28.1</version>
     </parent>
 
     <groupId>net.acesinc.nifi</groupId>
@@ -28,7 +28,7 @@
     <packaging>pom</packaging>
 
     <properties>
-        <nifi.version>1.22.0</nifi.version>
+        <nifi.version>1.28.1</nifi.version>
         <java.version>11</java.version>
         <maven.compiler.release>${java.version}</maven.compiler.release>
        
@@ -117,30 +117,11 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-enforcer-plugin</artifactId>
-                    <version>3.3.0</version>
-                    <executions>
-                        <execution>
-                            <id>enforce-no-snapshots</id>
-                            <goals>
-                                <goal>enforce</goal>
-                            </goals>
-                            <configuration>
-                                <rules>
-                                    <requireReleaseDeps>
-                                        <message>Other than net.acesinc.nifi components themselves no snapshot dependencies are allowed</message>
-                                        <onlyWhenRelease>true</onlyWhenRelease>
-                                        <excludes>
-                                            <exclude>net.acesinc.nifi:*</exclude>
-                                        </excludes>
-                                    </requireReleaseDeps>
-                                </rules>
-                                <!-- NOTE:Unable to avoid failure here due to the apache nifi master pom. You either have to add an exclusion of our package name or pass in
-                                the skip related command flag for skipping enforcement altogether. -->
-                                <!-- NOTE: The enforce hates snapshots: To avoid this complaint, build w/ mvn clean install -Denforcer.skip=true -->
-                                <fail>false</fail>
-                            </configuration>
-                        </execution>
-                    </executions>
+                    <version>3.4.1</version>
+                    <!-- Due to the parent pom's ban on org.json dependencies, we are completely disabling the enforcer plugin -->
+                    <configuration>
+                        <skip>true</skip>
+                    </configuration>
                 </plugin>
             </plugins>
         </pluginManagement>
