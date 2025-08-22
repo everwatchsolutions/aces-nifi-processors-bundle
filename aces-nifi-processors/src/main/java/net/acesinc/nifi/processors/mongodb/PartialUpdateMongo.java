@@ -46,7 +46,6 @@ import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.io.InputStreamCallback;
 import org.apache.nifi.processor.io.OutputStreamCallback;
-import org.apache.nifi.processors.mongodb.AbstractMongoBridgeProcessor;
 import org.apache.nifi.stream.io.StreamUtils;
 import org.apache.nifi.util.StopWatch;
 import org.bson.Document;
@@ -140,10 +139,17 @@ public class PartialUpdateMongo extends AbstractMongoBridgeProcessor {
 
     static {
         List<PropertyDescriptor> _propertyDescriptors = new ArrayList<>();
+        
+        _propertyDescriptors.add(CLIENT_SERVICE);
+        _propertyDescriptors.add(URI);
+        _propertyDescriptors.add(DATABASE_NAME);
+        _propertyDescriptors.add(COLLECTION_NAME);
+        _propertyDescriptors.add(SSL_CONTEXT_SERVICE);
+        _propertyDescriptors.add(CLIENT_AUTH);
+        
         //NOTE: This processor did not originally support SSL and has not been tested w/ use of it. 
         //We are now including the SSL CONTEXT SERVICE and the CLIENT AUTH NAME in this processor for now as that was the easiest thing to do for now.
         //We could choose later to filter out these, but for now they are there.
-        _propertyDescriptors.addAll(propDescriptors);
         _propertyDescriptors.add(MODE);
         _propertyDescriptors.add(UPDATE_QUERY_KEY);
         _propertyDescriptors.add(OPERATION);
